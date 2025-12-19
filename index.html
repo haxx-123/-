@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
+    <title>棱镜-StockWise</title>
+    <meta name="description" content="StockWise-智能库管系统" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              prismLight: {
+                bg: '#F2F3F7', // Ghost White
+                text: '#3C3836',
+                accent: '#D65D0E',
+                secondary: '#076678'
+              },
+              prismDark: {
+                bg: '#1D2021',
+                text: '#EBDBB2'
+              }
+            },
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      /* Custom Scrollbar */
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: rgba(156, 163, 175, 0.5);
+        border-radius: 3px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: rgba(156, 163, 175, 0.8);
+      }
+      
+      /* Glassmorphism Utilities */
+      .glass {
+        background: rgba(255, 255, 255, 0.7);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+      }
+      .dark .glass {
+        background: rgba(30, 30, 30, 0.7);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+      }
+      
+      /* Prism Theme Overrides */
+      .theme-prism-light .glass {
+        background: rgba(242, 243, 247, 0.8); /* #F2F3F7 with opacity */
+        border-color: #D65D0E;
+      }
+      .theme-prism-dark .glass {
+        background: rgba(29, 32, 33, 0.8);
+        border-color: #504945;
+      }
+
+      /* Username Badge Gradients */
+      .role-gradient-00 {
+        background: linear-gradient(45deg, #d946ef, #ec4899, #06b6d4);
+        -webkit-background-clip: text;
+        color: transparent;
+        text-shadow: 0 0 10px rgba(217, 70, 239, 0.3);
+      }
+      .role-gradient-01 {
+        background: linear-gradient(45deg, #FFD700, #FFA500, #FFFFE0);
+        -webkit-background-clip: text;
+        color: transparent;
+        text-shadow: 0 0 5px rgba(255, 215, 0, 0.5);
+      }
+      
+      /* Splash Screen */
+      #splash-screen {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        transition: opacity 0.8s ease-out, visibility 0.8s;
+        background-color: #ffffff;
+      }
+      .dark #splash-screen { background-color: #1f2937; }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "framer-motion": "https://esm.sh/framer-motion@^12.23.26",
+    "html2canvas": "https://esm.sh/html2canvas@^1.4.1",
+    "react-router-dom": "https://esm.sh/react-router-dom@^7.11.0",
+    "xlsx": "https://esm.sh/xlsx@^0.18.5",
+    "lucide-react": "https://esm.sh/lucide-react@^0.561.0"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
