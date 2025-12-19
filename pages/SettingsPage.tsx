@@ -5,6 +5,7 @@ import { RoleLevel, User, LogPermissionLevel, UserPermissions } from '../types';
 import { useApp } from '../App';
 import UsernameBadge from '../components/UsernameBadge';
 import * as XLSX from 'xlsx';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../supabase';
 
 const SettingsPage = () => {
   const { theme, setTheme, user, login, logout, setPageActions } = useApp();
@@ -436,7 +437,7 @@ const SettingsPage = () => {
              {user?.role === RoleLevel.ROOT ? (
                <div className="bg-gray-900 text-green-400 font-mono text-sm p-4 rounded-lg overflow-x-auto">
                  <p className="opacity-50">// System Status: Online</p>
-                 <p>SUPABASE_URL = "https://mock.supabase.co"</p>
+                 <p>SUPABASE_URL = "{SUPABASE_URL}"</p>
                  <p className="text-yellow-400">SQL_SYNC: No changes detected.</p>
                  <p className="text-gray-500 mt-2">// SQL是否必须包含重置数据库: 否</p>
                  <button className="mt-2 px-3 py-1 bg-green-900/50 border border-green-700 text-xs rounded hover:bg-green-800">Force Sync</button>

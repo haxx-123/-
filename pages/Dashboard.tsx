@@ -11,13 +11,14 @@ const SimpleBarChart = ({ data }: { data: { label: string; value: number; color:
     <div className="flex items-end justify-around h-48 gap-2 pt-4">
       {data.map((d, i) => (
         <div key={i} className="flex flex-col items-center gap-1 flex-1 group relative">
-          <div className="relative w-full flex justify-center items-end h-40 bg-gray-100 dark:bg-gray-700/50 rounded-t-lg overflow-hidden">
+          <div className="relative w-full flex justify-center items-end h-40 bg-gray-100 dark:bg-gray-700/50 rounded-t-lg overflow-hidden cursor-pointer">
              <div 
                className="w-full max-w-[40px] transition-all duration-700 ease-out hover:opacity-80 rounded-t-sm"
                style={{ height: `${(d.value / maxValue) * 100}%`, backgroundColor: d.color }}
              ></div>
-             <div className="absolute -top-8 opacity-0 group-hover:opacity-100 transition-opacity bg-black text-white text-xs p-1 rounded pointer-events-none z-10 whitespace-nowrap">
-               {d.label}: {d.value}
+             {/* Tooltip */}
+             <div className="absolute -top-10 opacity-0 group-hover:opacity-100 transition-opacity bg-black/80 backdrop-blur-sm text-white text-xs px-2 py-1 rounded pointer-events-none z-10 whitespace-nowrap shadow-xl transform translate-y-2 group-hover:translate-y-0">
+               <span className="font-bold">{d.label}</span>: {d.value}
              </div>
           </div>
           <span className="text-xs text-gray-500 truncate w-full text-center mt-1">{d.label}</span>
@@ -38,21 +39,61 @@ const SimpleLineChart = ({ data }: { data: { day: string; in: number; out: numbe
     }).join(' ');
   };
 
+  const [hoverData, setHoverData] = useState<{ day: string; in: number; out: number; x: number } | null>(null);
+
   return (
-    <div className="relative h-48 w-full group">
+    <div 
+      className="relative h-48 w-full group"
+      onMouseLeave={() => setHoverData(null)}
+    >
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full overflow-visible">
          {/* Grid Lines */}
-         <line x1="0" y1="25" x2="100" y2="25" stroke="#e5e7eb" strokeWidth="0.5" strokeDasharray="2" />
-         <line x1="0" y1="50" x2="100" y2="50" stroke="#e5e7eb" strokeWidth="0.5" strokeDasharray="2" />
-         <line x1="0" y1="75" x2="100" y2="75" stroke="#e5e7eb" strokeWidth="0.5" strokeDasharray="2" />
+         {[25, 50, 75].map(y => (
+            <line key={y} x1="0" y1={y} x2="100" y2={y} stroke="#e5e7eb" strokeWidth="0.5" strokeDasharray="2" />
+         ))}
          
          {/* Inbound Line */}
          <polyline fill="none" stroke="#10b981" strokeWidth="2" points={getPoints('in')} vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round"/>
          {/* Outbound Line */}
          <polyline fill="none" stroke="#ef4444" strokeWidth="2" points={getPoints('out')} vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round"/>
          
-         {/* Hover Overlay - Simplified */}
+         {/* Interactive Areas */}
+         {data.map((d, i) => (
+            <rect 
+                key={i}
+                x={(i / (data.length - 1)) * 100 - 5}
+                y="0"
+                width="10"
+                height="100"
+                fill="transparent"
+                onMouseEnter={() => setHoverData({ ...d, x: (i / (data.length - 1)) * 100 })}
+            />
+         ))}
+
+         {/* Hover Indicator */}
+         {hoverData && (
+             <line x1={hoverData.x} y1="0" x2={hoverData.x} y2="100" stroke="#9ca3af" strokeWidth="1" strokeDasharray="4" vectorEffect="non-scaling-stroke"/>
+         )}
       </svg>
+
+      {/* Tooltip Overlay */}
+      {hoverData && (
+          <div 
+            className="absolute top-0 bg-white dark:bg-gray-800 p-2 rounded-lg shadow-xl border border-gray-200 dark:border-gray-600 text-xs z-20 pointer-events-none transition-all"
+            style={{ left: `${hoverData.x}%`, transform: 'translate(-50%, -120%)' }}
+          >
+              <div className="font-bold mb-1 text-gray-700 dark:text-gray-200">{hoverData.day}</div>
+              <div className="flex items-center gap-2 text-green-600">
+                  <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                  入库: {hoverData.in}
+              </div>
+              <div className="flex items-center gap-2 text-red-600">
+                  <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                  出库: {hoverData.out}
+              </div>
+          </div>
+      )}
+
       <div className="flex justify-between mt-2 text-xs text-gray-400">
          {data.map((d, i) => <span key={i}>{d.day}</span>)}
       </div>

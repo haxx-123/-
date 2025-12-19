@@ -5,10 +5,10 @@ import { MOCK_PRODUCTS } from '../constants';
 import { Product, Batch, RoleLevel } from '../types';
 import { useApp } from '../App';
 import { motion, AnimatePresence } from 'framer-motion';
-import FaceID from '../components/FaceID'; 
+import BarcodeScanner from '../components/BarcodeScanner'; // Use the new BarcodeScanner
 import * as XLSX from 'xlsx';
 
-// ... (Existing Modals: BillingModal, AdjustModal, AddBatchModal, ProductDetailModal) ...
+// ... (BillingModal, AdjustModal, ProductDetailModal implementations remain mostly same, focusing on AddBatchModal) ...
 
 const BillingModal = ({ batch, productName, onClose }: { batch: Batch; productName: string; onClose: () => void }) => {
   const [type, setType] = useState<'in' | 'out'>('out');
@@ -171,52 +171,69 @@ const AdjustModal = ({ target, type, onClose }: { target: Product | Batch; type:
 };
 
 const AddBatchModal = ({ product, onClose }: { product: Product; onClose: () => void }) => {
+  const [showScanner, setShowScanner] = useState(false);
+  const [batchNo, setBatchNo] = useState('');
+
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm animate-fade-in">
-       <div className="bg-white dark:bg-gray-800 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
-          <div className="p-4 border-b dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900">
-             <h3 className="font-bold text-lg dark:text-white">新增批号 - {product.name}</h3>
-             <button onClick={onClose}><X className="w-5 h-5 text-gray-500" /></button>
-          </div>
-          <div className="p-6 space-y-4">
-             <div>
-                <label className="block text-sm font-medium mb-1">批号 (支持扫码)</label>
-                <div className="flex gap-2">
-                   <input type="text" className="input-std flex-1" placeholder="输入或扫码" />
-                   <button 
-                        className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200" 
-                        title="扫码识别"
-                        onClick={() => alert("开启摄像头扫码...")}
-                   >
-                       <ScanLine className="w-5 h-5" />
-                   </button>
-                </div>
-             </div>
-             <div>
-                <label className="block text-sm font-medium mb-1">有效期</label>
-                <input type="date" className="input-std" />
-             </div>
-             <div className="grid grid-cols-2 gap-4">
+    <>
+        {showScanner && (
+            <BarcodeScanner 
+                onScan={(code) => { setBatchNo(code); setShowScanner(false); }}
+                onClose={() => setShowScanner(false)}
+            />
+        )}
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm animate-fade-in">
+        <div className="bg-white dark:bg-gray-800 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
+            <div className="p-4 border-b dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900">
+                <h3 className="font-bold text-lg dark:text-white">新增批号 - {product.name}</h3>
+                <button onClick={onClose}><X className="w-5 h-5 text-gray-500" /></button>
+            </div>
+            <div className="p-6 space-y-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1">初始库存 (整-{product.batches[0]?.unitBig || '盒'})</label>
-                  <input type="number" className="input-std" placeholder="0" />
+                    <label className="block text-sm font-medium mb-1">批号 (支持扫码)</label>
+                    <div className="flex gap-2">
+                    <input 
+                        type="text" 
+                        value={batchNo}
+                        onChange={(e) => setBatchNo(e.target.value)}
+                        className="input-std flex-1 font-mono" 
+                        placeholder="输入或扫码" 
+                    />
+                    <button 
+                            className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200" 
+                            title="扫码识别"
+                            onClick={() => setShowScanner(true)}
+                    >
+                        <ScanLine className="w-5 h-5" />
+                    </button>
+                    </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">初始库存 (散-{product.batches[0]?.unitSmall || '粒'})</label>
-                  <input type="number" className="input-std" placeholder="0" />
+                    <label className="block text-sm font-medium mb-1">有效期</label>
+                    <input type="date" className="input-std" />
                 </div>
-             </div>
-             <div>
-                <label className="block text-sm font-medium mb-1">备注</label>
-                <textarea className="input-std h-20"></textarea>
-             </div>
-             
-             <button onClick={() => { alert('批号已添加'); onClose(); }} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-600/20 mt-2">
-               确认添加
-             </button>
-          </div>
-       </div>
-    </div>
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                    <label className="block text-sm font-medium mb-1">初始库存 (整-{product.batches[0]?.unitBig || '盒'})</label>
+                    <input type="number" className="input-std" placeholder="0" />
+                    </div>
+                    <div>
+                    <label className="block text-sm font-medium mb-1">初始库存 (散-{product.batches[0]?.unitSmall || '粒'})</label>
+                    <input type="number" className="input-std" placeholder="0" />
+                    </div>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium mb-1">备注</label>
+                    <textarea className="input-std h-20"></textarea>
+                </div>
+                
+                <button onClick={() => { alert('批号已添加'); onClose(); }} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-600/20 mt-2">
+                确认添加
+                </button>
+            </div>
+        </div>
+        </div>
+    </>
   );
 };
 
@@ -245,7 +262,7 @@ const Inventory = () => {
   const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
-  const [showScanner, setShowScanner] = useState(false);
+  const [showMainScanner, setShowMainScanner] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   
   // Modal States
@@ -297,9 +314,9 @@ const Inventory = () => {
     setExpandedProducts(newSet);
   };
 
-  const handleScanSuccess = () => {
-      setSearchTerm("AMXL"); // Mock scan result
-      setShowScanner(false);
+  const handleScanSuccess = (code: string) => {
+      setSearchTerm(code); // Mock scan result sets search term
+      setShowMainScanner(false);
   };
 
   const filteredProducts = products.filter(p => {
@@ -416,7 +433,9 @@ const Inventory = () => {
       {previewProduct && (
           <ProductDetailModal product={previewProduct} onClose={() => setPreviewProduct(null)} />
       )}
-      {showScanner && <FaceID onSuccess={handleScanSuccess} onCancel={() => setShowScanner(false)} />}
+      
+      {/* Global Scanner for Main Search */}
+      {showMainScanner && <BarcodeScanner onScan={handleScanSuccess} onClose={() => setShowMainScanner(false)} />}
 
       {/* Header & Search */}
       <div className="flex flex-col md:flex-row justify-between items-center gap-4 animate-fade-in-up">
@@ -434,7 +453,7 @@ const Inventory = () => {
                 className="w-full pl-10 pr-12 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 outline-none transition-shadow"
               />
               <button 
-                onClick={() => setShowScanner(true)}
+                onClick={() => setShowMainScanner(true)}
                 className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1.5 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
                 title="扫码"
               >
