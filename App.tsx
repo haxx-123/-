@@ -9,14 +9,14 @@ import { AnimatePresence, motion } from 'framer-motion';
 import html2canvas from 'html2canvas';
 import * as XLSX from 'xlsx';
 
-import { ThemeMode, RoleLevel, User, Store } from './types';
-import { THEMES, MOCK_USER, MOCK_STORES } from './constants';
+import { ThemeMode, RoleLevel, User, Store, Product, OperationLog, LoginRecord } from './types';
+import { THEMES, MOCK_USER, MOCK_STORES, MOCK_PRODUCTS, MOCK_LOGS, MOCK_USERS, MOCK_LOGIN_RECORDS } from './constants';
 import UsernameBadge from './components/UsernameBadge';
 import FaceID from './components/FaceID';
 import AnnouncementCenter from './components/AnnouncementCenter';
 import StoreManager from './components/StoreManager';
 
-// Lazy Load Pages for Performance (Code Splitting)
+// Lazy Load Pages
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Inventory = lazy(() => import('./pages/Inventory'));
 const OperationLogs = lazy(() => import('./pages/OperationLogs'));
@@ -50,6 +50,15 @@ interface AppContextType {
   setStoreManagerOpen: (b: boolean) => void;
   setPageActions: (actions: PageActions) => void;
   isMobile: boolean;
+  // GLOBAL STATE FOR DATA PERSISTENCE
+  products: Product[];
+  setProducts: React.Dispatch<React.SetStateAction<Product[]>>;
+  logs: OperationLog[];
+  setLogs: React.Dispatch<React.SetStateAction<OperationLog[]>>;
+  users: User[];
+  setUsers: React.Dispatch<React.SetStateAction<User[]>>;
+  loginRecords: LoginRecord[];
+  setLoginRecords: React.Dispatch<React.SetStateAction<LoginRecord[]>>;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -72,17 +81,24 @@ const InstallAppFloating = () => {
   const [installPrompt, setInstallPrompt] = useState<any>(null);
   const [showIOSModal, setShowIOSModal] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
+  // Show by default for demo purposes so users know it exists, but handle logic
+  const [isVisible, setIsVisible] = useState(true);
 
   useEffect(() => {
+    // Check if already installed
     if (window.matchMedia('(display-mode: standalone)').matches) {
       setIsInstalled(true);
+      return;
     }
 
+    // Chrome/Android Logic
     const handler = (e: any) => {
       e.preventDefault();
       setInstallPrompt(e);
+      setIsVisible(true);
     };
     window.addEventListener('beforeinstallprompt', handler);
+
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 
@@ -96,10 +112,12 @@ const InstallAppFloating = () => {
       installPrompt.userChoice.then((choiceResult: any) => {
         if (choiceResult.outcome === 'accepted') {
           setInstallPrompt(null);
+          setIsVisible(false);
         }
       });
-    } else if (!isInstalled) {
-       alert("请使用 Chrome 浏览器打开以安装应用，或手动添加到主屏幕。");
+    } else {
+       // Manual Fallback for browsers that don't support the prompt or haven't fired it yet
+       alert("请点击浏览器菜单中的“添加到主屏幕”或“安装应用”");
     }
   };
 
@@ -107,15 +125,17 @@ const InstallAppFloating = () => {
 
   return (
     <>
-      <motion.button 
-        whileHover={{ scale: 1.1 }}
-        whileTap={{ scale: 0.9 }}
-        onClick={handleInstallClick}
-        className="fixed top-20 right-4 z-50 p-3 bg-blue-600 text-white rounded-full shadow-xl shadow-blue-600/40 hover:bg-blue-700 transition-colors animate-bounce-slow"
-        title="安装应用"
-      >
-        <Download className="w-6 h-6" />
-      </motion.button>
+      {isVisible && (
+        <motion.button 
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={handleInstallClick}
+            className="fixed top-20 right-4 z-50 p-3 bg-blue-600 text-white rounded-full shadow-xl shadow-blue-600/40 hover:bg-blue-700 transition-colors animate-bounce-slow"
+            title="安装应用"
+        >
+            <Download className="w-6 h-6" />
+        </motion.button>
+      )}
 
       {showIOSModal && (
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black bg-opacity-60 backdrop-blur-sm p-4" onClick={() => setShowIOSModal(false)}>
@@ -398,6 +418,19 @@ const SplashScreen = ({ onFinish }: { onFinish: () => void }) => {
   );
 };
 
+const PageWrapper = ({ children }: { children?: React.ReactNode }) => (
+  <motion.div
+    initial={{ opacity: 0, x: 20 }}
+    animate={{ opacity: 1, x: 0 }}
+    exit={{ opacity: 0, x: -20 }}
+    transition={{ duration: 0.3 }}
+  >
+    <Suspense fallback={<LoadingScreen />}>
+      {children}
+    </Suspense>
+  </motion.div>
+);
+
 const MainLayout = () => {
   const { user, announcementsOpen, setAnnouncementsOpen, storeManagerOpen, setStoreManagerOpen } = useApp();
   const location = useLocation();
@@ -405,7 +438,8 @@ const MainLayout = () => {
   if (!user) return <Login />;
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-300 font-sans">
+    // Removed bg-gray-50 to allow body color to shine through for Prism themes
+    <div className="min-h-screen text-gray-900 dark:text-gray-100 transition-colors duration-300 font-sans">
       <Sidebar />
       <Navbar />
       <InstallAppFloating />
@@ -421,26 +455,17 @@ const MainLayout = () => {
 
       <main id="main-content" className="lg:pl-64 pt-16 min-h-screen transition-all">
         <div className="p-4 lg:p-8 max-w-7xl mx-auto">
-           <AnimatePresence mode='wait'>
-             <motion.div
-               key={location.pathname}
-               initial={{ opacity: 0, x: 20 }}
-               animate={{ opacity: 1, x: 0 }}
-               exit={{ opacity: 0, x: -20 }}
-               transition={{ duration: 0.3, ease: "easeOut" }} // Smooth one-time slide
-             >
-               <Suspense fallback={<LoadingScreen />}>
-                 <Routes>
-                   <Route path="/" element={<Dashboard />} />
-                   <Route path="/inventory" element={<Inventory />} />
-                   <Route path="/logs" element={<OperationLogs />} />
-                   <Route path="/import" element={<ImportProducts />} />
-                   <Route path="/audit" element={<AuditHall />} />
-                   <Route path="/settings" element={<SettingsPage />} />
-                   <Route path="*" element={<div className="p-10 text-center">页面建设中...</div>} />
-                 </Routes>
-               </Suspense>
-             </motion.div>
+           {/* Re-introduced AnimatePresence for Page Transitions */}
+           <AnimatePresence mode="wait">
+             <Routes location={location} key={location.pathname}>
+               <Route path="/" element={<PageWrapper><Dashboard /></PageWrapper>} />
+               <Route path="/inventory" element={<PageWrapper><Inventory /></PageWrapper>} />
+               <Route path="/logs" element={<PageWrapper><OperationLogs /></PageWrapper>} />
+               <Route path="/import" element={<PageWrapper><ImportProducts /></PageWrapper>} />
+               <Route path="/audit" element={<PageWrapper><AuditHall /></PageWrapper>} />
+               <Route path="/settings" element={<PageWrapper><SettingsPage /></PageWrapper>} />
+               <Route path="*" element={<div className="p-10 text-center">页面建设中...</div>} />
+             </Routes>
            </AnimatePresence>
         </div>
       </main>
@@ -461,6 +486,12 @@ const AppContent = () => {
   // Dynamic Page Actions
   const [pageActions, setPageActions] = useState<PageActions>({});
 
+  // --- GLOBAL STATE LIFTED UP FOR PERSISTENCE ---
+  const [products, setProducts] = useState<Product[]>(MOCK_PRODUCTS);
+  const [logs, setLogs] = useState<OperationLog[]>(MOCK_LOGS);
+  const [users, setUsers] = useState<User[]>(MOCK_USERS);
+  const [loginRecords, setLoginRecords] = useState<LoginRecord[]>(MOCK_LOGIN_RECORDS);
+
   // Mobile Detection
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -478,20 +509,19 @@ const AppContent = () => {
     }
   }, [appReady]);
 
+  // --- STRICT THEME APPLICATION LOGIC ---
   useEffect(() => {
     const root = window.document.documentElement;
     root.classList.remove('dark', 'theme-prism-light', 'theme-prism-dark');
     
-    // Strict Theme Logic
     if (theme === 'dark') {
         root.classList.add('dark');
         root.style.backgroundColor = '#000000'; // Pure Black
     } else if (theme === 'prism-light') {
         root.classList.add('theme-prism-light');
-        root.style.backgroundColor = '#F2F3F7'; // Ghost White
+        // Note: Strict colors are applied via CSS in index.html targeting .theme-prism-light body
     } else if (theme === 'prism-dark') {
         root.classList.add('dark', 'theme-prism-dark');
-        root.style.backgroundColor = '#1D2021'; // Deep Dark
     } else {
         root.style.backgroundColor = '#ffffff'; // White
     }
@@ -515,7 +545,24 @@ const AppContent = () => {
   }, [user, appReady]);
 
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
-  const login = (u: User) => setUser(u);
+  
+  const login = (u: User) => {
+      // Ensure we use the user from the global 'users' state if possible, so permissions are up to date
+      const freshUser = users.find(existing => existing.id === u.id) || u;
+      setUser(freshUser);
+
+      // Add Login Record
+      const newRecord: LoginRecord = {
+          id: `login_${Date.now()}`,
+          user_id: freshUser.id,
+          user_name: freshUser.username,
+          device_name: navigator.userAgent.includes('Mobile') ? 'Mobile Device' : 'Desktop PC',
+          ip_address: '192.168.1.x', // Mock IP
+          login_at: new Date().toISOString()
+      };
+      setLoginRecords(prev => [newRecord, ...prev]);
+  };
+  
   const logout = () => {
       setUser(null);
       sessionStorage.clear(); // Clear all session storage on logout
@@ -532,7 +579,12 @@ const AppContent = () => {
       setPageActions,
       handleCopy: pageActions.handleCopy,
       handleExcel: pageActions.handleExcel,
-      isMobile
+      isMobile,
+      // Global State Persistence
+      products, setProducts,
+      logs, setLogs,
+      users, setUsers,
+      loginRecords, setLoginRecords
     }}>
       {!appReady && <SplashScreen onFinish={() => setAppReady(true)} />}
       {appReady && (

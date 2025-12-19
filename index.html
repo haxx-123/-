@@ -15,13 +15,11 @@
             colors: {
               prismLight: {
                 bg: '#F2F3F7', // Ghost White
-                text: '#3C3836',
-                accent: '#D65D0E',
-                secondary: '#076678'
+                text: '#3C3836', // Charcoal
               },
               prismDark: {
-                bg: '#1D2021',
-                text: '#EBDBB2'
+                bg: '#1D2021', // Deep Dark
+                text: '#EBDBB2' // Oatmeal
               }
             },
             fontFamily: {
@@ -48,7 +46,45 @@
         background: rgba(156, 163, 175, 0.8);
       }
       
-      /* Glassmorphism Utilities */
+      /* Base Transition */
+      body {
+        transition: background-color 0.3s ease, color 0.3s ease;
+      }
+
+      /* PRISM LIGHT THEME STRICT OVERRIDES */
+      /* 强制背景色 #F2F3F7 和文字颜色 #3C3836 覆盖全局 */
+      html.theme-prism-light body, 
+      html.theme-prism-light #root {
+        background-color: #F2F3F7 !important;
+        color: #3C3836 !important;
+      }
+      /* 修复特定容器背景，使其在 Prism Light 模式下也融入背景或保持微透 */
+      html.theme-prism-light .bg-white {
+        background-color: rgba(255, 255, 255, 0.6) !important; /* 让卡片微微透出背景色 */
+      }
+      html.theme-prism-light .glass {
+        background: rgba(242, 243, 247, 0.85);
+        border: 1px solid rgba(60, 56, 54, 0.1);
+        color: #3C3836;
+      }
+
+      /* PRISM DARK THEME STRICT OVERRIDES */
+      html.theme-prism-dark body,
+      html.theme-prism-dark #root {
+        background-color: #1D2021 !important;
+        color: #EBDBB2 !important;
+      }
+      html.theme-prism-dark .bg-white, 
+      html.theme-prism-dark .bg-gray-800 {
+        background-color: rgba(29, 32, 33, 0.8) !important;
+      }
+      html.theme-prism-dark .glass {
+        background: rgba(29, 32, 33, 0.85);
+        border: 1px solid rgba(235, 219, 178, 0.1);
+        color: #EBDBB2;
+      }
+      
+      /* Standard Glass */
       .glass {
         background: rgba(255, 255, 255, 0.7);
         backdrop-filter: blur(10px);
@@ -58,16 +94,6 @@
       .dark .glass {
         background: rgba(30, 30, 30, 0.7);
         border: 1px solid rgba(255, 255, 255, 0.05);
-      }
-      
-      /* Prism Theme Overrides */
-      .theme-prism-light .glass {
-        background: rgba(242, 243, 247, 0.8); /* #F2F3F7 with opacity */
-        border-color: #D65D0E;
-      }
-      .theme-prism-dark .glass {
-        background: rgba(29, 32, 33, 0.8);
-        border-color: #504945;
       }
 
       /* Username Badge Gradients */
@@ -116,6 +142,5 @@
 </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/index.tsx"></script>
   </body>
 </html>

@@ -1,18 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronDown, ChevronUp, Database, User as UserIcon, Shield, Palette, Plus, Edit, Trash2, X, Save, ScanFace, Lock, RefreshCcw, Eye, EyeOff, LayoutTemplate } from 'lucide-react';
-import { THEMES, MOCK_USERS } from '../constants';
+import { THEMES } from '../constants';
 import { RoleLevel, User, LogPermissionLevel, UserPermissions } from '../types';
 import { useApp } from '../App';
 import UsernameBadge from '../components/UsernameBadge';
 import * as XLSX from 'xlsx';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../supabase';
+import { SUPABASE_URL } from '../supabase';
 
 const SettingsPage = () => {
-  const { theme, setTheme, user, login, logout, setPageActions } = useApp();
+  const { theme, setTheme, user, login, logout, setPageActions, users, setUsers } = useApp();
   const [openSection, setOpenSection] = useState<string | null>('account');
   
-  // Permission Management State
-  const [users, setUsers] = useState(MOCK_USERS);
+  // Permission Management Local UI State
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
@@ -27,14 +26,16 @@ const SettingsPage = () => {
   // Initialize form with current user data
   useEffect(() => {
       if (user) {
+          // If the logged-in user details change in global state, update the local form
+          const currentUserData = users.find(u => u.id === user.id) || user;
           setAccountForm({
-              username: user.username,
+              username: currentUserData.username,
               password: '', 
-              avatar: user.avatar || '',
+              avatar: currentUserData.avatar || '',
           });
           setIsAccountDirty(false);
       }
-  }, [user]);
+  }, [user, users]);
 
   // Register Actions for User List
   useEffect(() => {
@@ -63,11 +64,20 @@ const SettingsPage = () => {
   };
 
   const handleSaveAccount = () => {
-      if (!isAccountDirty) return;
-      alert('账户信息已更新 (Mock)');
+      if (!isAccountDirty || !user) return;
+      
+      // Update global users state
+      const updatedUsers = users.map(u => 
+        u.id === user.id ? { ...u, username: accountForm.username } : u
+      );
+      setUsers(updatedUsers);
+      
+      // Update current session user
+      const updatedUser = updatedUsers.find(u => u.id === user.id);
+      if(updatedUser) login(updatedUser);
+
+      alert('账户信息已更新 (已同步至全局状态)');
       setIsAccountDirty(false);
-      // In real app, update user context
-      if(user) login({...user, username: accountForm.username});
   };
 
   const toggleSection = (id: string) => {
@@ -77,7 +87,7 @@ const SettingsPage = () => {
   // --- Permission Logic ---
 
   const handleEditUser = (u: User) => {
-    // REJECT OLD DATA: Force fetch from current state
+    // REJECT OLD DATA: Force fetch from global state
     const freshUser = users.find(existing => existing.id === u.id) || u;
     setEditingUser({...freshUser, permissions: freshUser.permissions || {}});
     setIsEditModalOpen(true);
@@ -96,13 +106,20 @@ const SettingsPage = () => {
   const savePermissionUser = () => {
     if (editingUser) {
       const exists = users.find(u => u.id === editingUser.id);
+      let updatedUsers;
       if (exists) {
-        setUsers(users.map(u => u.id === editingUser.id ? editingUser : u));
+        updatedUsers = users.map(u => u.id === editingUser.id ? editingUser : u);
       } else {
-        setUsers([...users, editingUser]);
+        updatedUsers = [...users, editingUser];
       }
+      setUsers(updatedUsers);
       setIsEditModalOpen(false);
       setEditingUser(null);
+      
+      // If editing self, update context
+      if (user && editingUser.id === user.id) {
+          login(editingUser);
+      }
     }
   };
 

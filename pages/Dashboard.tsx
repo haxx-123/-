@@ -1,27 +1,43 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../App';
 import { AlertTriangle, Clock, Settings, X, TrendingUp, BarChart2, Calendar } from 'lucide-react';
-import { MOCK_PRODUCTS } from '../constants';
 
 // --- Helper Components for Charts (SVG) ---
 
 const SimpleBarChart = ({ data }: { data: { label: string; value: number; color: string }[] }) => {
-  const maxValue = Math.max(...data.map(d => d.value));
+  const maxValue = Math.max(...data.map(d => d.value), 1);
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+
   return (
-    <div className="flex items-end justify-around h-48 gap-2 pt-4">
+    <div className="flex items-end justify-around h-48 gap-2 pt-8 relative">
+      {/* Fixed Tooltip Overlay */}
+      {hoveredIndex !== null && (
+        <div 
+            className="absolute top-0 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs px-3 py-1 rounded shadow-lg z-20 transition-all pointer-events-none"
+            style={{ top: '-10px' }}
+        >
+            <span className="font-bold">{data[hoveredIndex].label}</span>: {data[hoveredIndex].value}
+        </div>
+      )}
+
       {data.map((d, i) => (
-        <div key={i} className="flex flex-col items-center gap-1 flex-1 group relative">
-          <div className="relative w-full flex justify-center items-end h-40 bg-gray-100 dark:bg-gray-700/50 rounded-t-lg overflow-hidden cursor-pointer">
+        <div 
+            key={i} 
+            className="flex flex-col items-center gap-1 flex-1 group relative h-full justify-end cursor-pointer"
+            onMouseEnter={() => setHoveredIndex(i)}
+            onMouseLeave={() => setHoveredIndex(null)}
+        >
+          <div className="relative w-full flex justify-center items-end h-[85%] bg-gray-100 dark:bg-gray-700/50 rounded-t-lg overflow-hidden">
              <div 
-               className="w-full max-w-[40px] transition-all duration-700 ease-out hover:opacity-80 rounded-t-sm"
-               style={{ height: `${(d.value / maxValue) * 100}%`, backgroundColor: d.color }}
+               className="w-full max-w-[40px] transition-all duration-700 ease-out rounded-t-sm hover:opacity-80"
+               style={{ 
+                   height: `${(d.value / maxValue) * 100}%`, 
+                   backgroundColor: d.color,
+                   opacity: hoveredIndex === i ? 0.9 : 1
+               }}
              ></div>
-             {/* Tooltip */}
-             <div className="absolute -top-10 opacity-0 group-hover:opacity-100 transition-opacity bg-black/80 backdrop-blur-sm text-white text-xs px-2 py-1 rounded pointer-events-none z-10 whitespace-nowrap shadow-xl transform translate-y-2 group-hover:translate-y-0">
-               <span className="font-bold">{d.label}</span>: {d.value}
-             </div>
           </div>
-          <span className="text-xs text-gray-500 truncate w-full text-center mt-1">{d.label}</span>
+          <span className="text-xs text-gray-500 truncate w-full text-center h-[15%]">{d.label}</span>
         </div>
       ))}
     </div>
@@ -29,7 +45,7 @@ const SimpleBarChart = ({ data }: { data: { label: string; value: number; color:
 };
 
 const SimpleLineChart = ({ data }: { data: { day: string; in: number; out: number }[] }) => {
-  const maxVal = Math.max(...data.map(d => Math.max(d.in, d.out)));
+  const maxVal = Math.max(...data.map(d => Math.max(d.in, d.out)), 10); // Ensure minimal scale
   
   const getPoints = (key: 'in' | 'out') => {
     return data.map((d, i) => {
@@ -129,43 +145,66 @@ const AlertListModal = ({ title, items, onClose }: { title: string; items: any[]
 );
 
 const Dashboard = () => {
-  const { currentStore } = useApp();
+  const { currentStore, products } = useApp();
   const [thresholds, setThresholds] = useState({ low: 10, expiry: 30 });
   const [showThresholdSettings, setShowThresholdSettings] = useState(false);
   const [activeModal, setActiveModal] = useState<'low' | 'expiry' | null>(null);
-  const [dateRange, setDateRange] = useState('7'); // days
+  const [dateRange, setDateRange] = useState<'7' | '30' | '90'>('7');
 
-  // Mock Data Logic
-  const totalStock = MOCK_PRODUCTS.reduce((acc, p) => acc + p.batches.reduce((bAcc, b) => bAcc + b.quantityBig * b.conversionRate + b.quantitySmall, 0), 0);
+  // Calculate stats from GLOBAL products
+  const totalStock = products.reduce((acc, p) => acc + p.batches.reduce((bAcc, b) => bAcc + b.quantityBig * b.conversionRate + b.quantitySmall, 0), 0);
   
-  const lowStockItems = MOCK_PRODUCTS.flatMap(p => 
+  const lowStockItems = products.flatMap(p => 
     p.batches.filter(b => b.quantityBig < thresholds.low).map(b => ({ name: p.name, detail: `批号: ${b.batchNumber}`, value: `${b.quantityBig}盒` }))
   );
 
-  const expiryItems = MOCK_PRODUCTS.flatMap(p => 
+  const expiryItems = products.flatMap(p => 
     p.batches.map(b => {
        const days = Math.floor((new Date(b.expiryDate).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
        return days < thresholds.expiry ? { name: p.name, detail: `有效期: ${b.expiryDate}`, value: `${days}天` } : null;
     }).filter(Boolean)
   );
 
-  const chartDataBar = [
-    { label: '抗生素', value: 450, color: '#3b82f6' },
-    { label: '感冒药', value: 320, color: '#10b981' },
-    { label: '心脑血管', value: 180, color: '#f59e0b' },
-    { label: '外用药', value: 240, color: '#8b5cf6' },
-    { label: '保健品', value: 100, color: '#ec4899' },
-  ];
+  // Dynamic Chart Data based on current categories
+  const categoryCounts = products.reduce((acc, p) => {
+      acc[p.category] = (acc[p.category] || 0) + p.batches.reduce((sum, b) => sum + b.quantityBig, 0);
+      return acc;
+  }, {} as Record<string, number>);
 
-  const chartDataLine = [
-    { day: '周一', in: 120, out: 80 },
-    { day: '周二', in: 150, out: 100 },
-    { day: '周三', in: 180, out: 200 },
-    { day: '周四', in: 90, out: 120 },
-    { day: '周五', in: 250, out: 150 },
-    { day: '周六', in: 300, out: 280 },
-    { day: '周日', in: 100, out: 90 },
-  ];
+  const chartColors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
+  const chartDataBar = Object.entries(categoryCounts).map(([label, value], idx) => ({
+      label, value: value as number, color: chartColors[idx % chartColors.length]
+  }));
+
+  // Logic for Dynamic Line Chart Data
+  const chartDataLine = useMemo(() => {
+      if (dateRange === '90') {
+          return [
+            { day: '1月', in: 1200, out: 800 },
+            { day: '2月', in: 1500, out: 1300 },
+            { day: '3月', in: 1800, out: 1600 },
+          ];
+      } else if (dateRange === '30') {
+          // Mock data for 4 weeks
+          return [
+            { day: '第一周', in: 300, out: 250 },
+            { day: '第二周', in: 400, out: 300 },
+            { day: '第三周', in: 200, out: 400 },
+            { day: '第四周', in: 500, out: 450 },
+          ];
+      } else {
+          // Default 7 days
+          return [
+            { day: '周一', in: 120, out: 80 },
+            { day: '周二', in: 150, out: 100 },
+            { day: '周三', in: 180, out: 200 },
+            { day: '周四', in: 90, out: 120 },
+            { day: '周五', in: 250, out: 150 },
+            { day: '周六', in: 300, out: 280 },
+            { day: '周日', in: 100, out: 90 },
+          ];
+      }
+  }, [dateRange]);
 
   return (
     <div className="space-y-6 animate-fade-in-up pb-20">
@@ -238,7 +277,11 @@ const Dashboard = () => {
             <h3 className="font-bold mb-4 flex items-center gap-2 text-gray-700 dark:text-gray-200">
                <BarChart2 className="w-5 h-5 text-blue-500" /> 库存分类分布
             </h3>
-            <SimpleBarChart data={chartDataBar} />
+            {chartDataBar.length > 0 ? (
+                <SimpleBarChart data={chartDataBar} />
+            ) : (
+                <p className="text-center text-gray-400 py-10">暂无库存数据</p>
+            )}
          </div>
 
          {/* Line Chart - In/Out Time */}
@@ -251,7 +294,7 @@ const Dashboard = () => {
                   <span className="text-xs px-2 text-gray-500">范围:</span>
                   <select 
                     value={dateRange} 
-                    onChange={(e) => setDateRange(e.target.value)}
+                    onChange={(e) => setDateRange(e.target.value as any)}
                     className="bg-transparent text-xs font-bold outline-none text-gray-700 dark:text-gray-200"
                   >
                      <option value="7">近7天</option>

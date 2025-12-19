@@ -1,9 +1,86 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Camera, FileSpreadsheet, Edit, X, ArrowRight, Image as ImageIcon, Trash2 } from 'lucide-react';
+import { Upload, Camera, FileSpreadsheet, Edit, X, ArrowRight, Image as ImageIcon, Trash2, ScanLine } from 'lucide-react';
 import FaceID from '../components/FaceID'; 
+import BarcodeScanner from '../components/BarcodeScanner';
+import * as XLSX from 'xlsx';
+import { useApp } from '../App';
+import { Product, Batch, RoleLevel, LogAction } from '../types';
 
 // --- Column Mapping Modal ---
-const ColumnMappingModal = ({ onClose }: { onClose: () => void }) => {
+const ColumnMappingModal = ({ file, onClose }: { file: File; onClose: () => void }) => {
+  const { setProducts, setLogs, user } = useApp();
+  
+  const handleImport = async () => {
+      try {
+          const buffer = await file.arrayBuffer();
+          const workbook = XLSX.read(buffer, { type: 'array' });
+          const sheetName = workbook.SheetNames[0];
+          const sheet = workbook.Sheets[sheetName];
+          const jsonData: any[] = XLSX.utils.sheet_to_json(sheet);
+
+          if (!jsonData || jsonData.length === 0) {
+              alert('Excel 文件为空或格式错误');
+              return;
+          }
+
+          // Mock mapping logic - Assume standard headers or attempt to guess
+          const newProducts: Product[] = jsonData.map((row, idx) => {
+              // Basic sanitization and default values
+              const name = row['商品名称'] || row['Name'] || `未知商品_${idx}`;
+              const sku = row['SKU'] || row['Code'] || `SKU-${Date.now()}-${idx}`;
+              
+              const batch: Batch = {
+                  id: `b_imp_${Date.now()}_${idx}`,
+                  batchNumber: row['批号'] || row['Batch'] || `BATCH-${new Date().getFullYear()}`,
+                  expiryDate: row['有效期'] || '2099-12-31',
+                  // Ensure Integer Quantity is mandatory, default 0
+                  quantityBig: Number(row['数量 (整)']) || Number(row['整数量']) || 0,
+                  quantitySmall: Number(row['数量 (散)']) || Number(row['散数量']) || 0,
+                  // Default units: 整/散
+                  unitBig: row['单位 (整)'] || row['整单位'] || '整',
+                  unitSmall: row['单位 (散)'] || row['散单位'] || '散',
+                  conversionRate: Number(row['换算率']) || 1,
+                  price: 0,
+                  notes: row['备注'] || row['Notes'] || '' // Batch level note
+              };
+
+              return {
+                  id: `p_imp_${Date.now()}_${idx}`,
+                  name: name,
+                  category: row['分类'] || '未分类',
+                  sku: sku,
+                  batches: [batch],
+                  image_url: 'https://placehold.co/100x100?text=Imported',
+                  notes: row['商品备注'] || '' 
+              };
+          });
+
+          setProducts(prev => [...prev, ...newProducts]);
+          
+          // Log the action
+          setLogs(prev => [{
+            id: `log_imp_${Date.now()}`,
+            action_type: LogAction.BATCH_IMPORT,
+            target_id: 'BATCH_IMPORT',
+            target_name: `批量导入 ${newProducts.length} 个商品`,
+            change_desc: `Excel 批量导入: ${file.name}`,
+            operator_id: user?.id || 'unknown',
+            operator_name: user?.username || 'Unknown',
+            created_at: new Date().toISOString(),
+            is_revoked: false,
+            snapshot_data: { count: newProducts.length },
+            role_level: user?.role || RoleLevel.STAFF
+          }, ...prev]);
+
+          alert(`成功导入 ${newProducts.length} 条商品数据！`);
+          onClose();
+
+      } catch (error) {
+          console.error("Import Error", error);
+          alert('导入失败：解析 Excel 文件时出错。');
+      }
+  };
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm animate-fade-in">
       <div className="bg-white dark:bg-gray-800 w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -14,6 +91,9 @@ const ColumnMappingModal = ({ onClose }: { onClose: () => void }) => {
             <button onClick={onClose}><X className="w-5 h-5 text-gray-500" /></button>
          </div>
          <div className="p-6 overflow-y-auto flex-1 bg-gray-50 dark:bg-gray-900">
+            <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 text-sm rounded-lg">
+                正在处理文件: <strong>{file.name}</strong>
+            </div>
             <p className="text-sm text-gray-500 mb-4">请确认 Excel 列与系统字段的对应关系 (红色为必填项)</p>
             <div className="grid grid-cols-1 gap-3">
                {['商品名称', '规格型号', '单位 (整)', '数量 (整)', '单位 (散)', '数量 (散)', '批号', '有效期', '备注'].map((field, idx) => (
@@ -21,10 +101,9 @@ const ColumnMappingModal = ({ onClose }: { onClose: () => void }) => {
                     <span className={`${['商品名称','数量 (整)'].includes(field) ? 'text-red-500 font-bold' : 'text-gray-700 dark:text-gray-300'}`}>{field}</span>
                     <ArrowRight className="w-4 h-4 text-gray-300" />
                     <select className="w-48 p-2 rounded-lg border dark:border-gray-600 dark:bg-gray-700 text-sm">
-                       <option>自动识别: 列 {String.fromCharCode(65+idx)}</option>
-                       <option>Column A</option>
-                       <option>Column B</option>
-                       <option>Ignore</option>
+                       <option>自动识别: {field}</option>
+                       <option>列 {String.fromCharCode(65+idx)}</option>
+                       <option>忽略此列</option>
                     </select>
                  </div>
                ))}
@@ -32,7 +111,7 @@ const ColumnMappingModal = ({ onClose }: { onClose: () => void }) => {
          </div>
          <div className="p-4 border-t dark:border-gray-700 bg-white dark:bg-gray-800 flex justify-end gap-3">
              <button onClick={onClose} className="px-6 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 font-medium">取消</button>
-             <button onClick={() => { alert('导入成功'); onClose(); }} className="px-6 py-2 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 shadow-lg shadow-blue-600/20">开始导入</button>
+             <button onClick={handleImport} className="px-6 py-2 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 shadow-lg shadow-blue-600/20">开始导入</button>
          </div>
       </div>
     </div>
@@ -42,73 +121,58 @@ const ColumnMappingModal = ({ onClose }: { onClose: () => void }) => {
 const ImportProducts = () => {
   const [activeTab, setActiveTab] = useState<'excel' | 'manual'>('excel');
   const [showCamera, setShowCamera] = useState(false);
+  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
   const [productImage, setProductImage] = useState<string | null>(null);
   const [showMappingModal, setShowMappingModal] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  
+  // Manual Form State
+  const [manualForm, setManualForm] = useState({
+      name: '',
+      batchNumber: '',
+      expiryDate: '',
+      quantityBig: 0,
+      quantitySmall: 0,
+      unitBig: '整',
+      unitSmall: '散',
+      notes: '' // Batch notes
+  });
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const excelInputRef = useRef<HTMLInputElement>(null);
 
   const handleCapture = () => {
-    // Mock capture result
     setProductImage("https://placehold.co/300x300?text=Scanned+Product");
     setShowCamera(false);
   };
 
-  const compressImage = async (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = (event) => {
-            const img = new Image();
-            img.src = event.target?.result as string;
-            img.onload = () => {
-                const canvas = document.createElement('canvas');
-                const MAX_WIDTH = 1024;
-                const MAX_HEIGHT = 1024;
-                let width = img.width;
-                let height = img.height;
-
-                if (width > height) {
-                    if (width > MAX_WIDTH) {
-                        height *= MAX_WIDTH / width;
-                        width = MAX_WIDTH;
-                    }
-                } else {
-                    if (height > MAX_HEIGHT) {
-                        width *= MAX_HEIGHT / height;
-                        height = MAX_HEIGHT;
-                    }
-                }
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                ctx?.drawImage(img, 0, 0, width, height);
-                // Compress to JPEG 0.7 quality
-                resolve(canvas.toDataURL('image/jpeg', 0.7));
-            };
-            img.onerror = (error) => reject(error);
-        };
-        reader.onerror = (error) => reject(error);
-    });
+  const handleExcelFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files[0]) {
+          setSelectedFile(e.target.files[0]);
+          setShowMappingModal(true);
+      }
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) {
-          try {
-              const compressedBase64 = await compressImage(file);
-              // In a real app, you would upload `compressedBase64` to Supabase Storage here and get a Public URL.
-              // For now, we display the base64 directly to simulate the preview.
-              setProductImage(compressedBase64);
-          } catch (err) {
-              console.error("Compression failed", err);
-              alert("图片处理失败");
-          }
+          const reader = new FileReader();
+          reader.readAsDataURL(file);
+          reader.onload = (e) => setProductImage(e.target?.result as string);
       }
   };
 
   return (
     <div className="space-y-6 animate-fade-in-up">
-      {showMappingModal && <ColumnMappingModal onClose={() => setShowMappingModal(false)} />}
+      {showMappingModal && selectedFile && <ColumnMappingModal file={selectedFile} onClose={() => setShowMappingModal(false)} />}
       
+      {showBarcodeScanner && (
+          <BarcodeScanner 
+            onScan={(code) => { setManualForm({...manualForm, batchNumber: code}); setShowBarcodeScanner(false); }} 
+            onClose={() => setShowBarcodeScanner(false)} 
+          />
+      )}
+
       <h2 className="text-2xl font-bold dark:text-white">导入商品</h2>
 
       <div className="flex p-1 bg-gray-200 dark:bg-gray-700 rounded-xl w-fit">
@@ -129,8 +193,15 @@ const ImportProducts = () => {
       <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
          {activeTab === 'excel' && (
            <div className="space-y-6">
+              <input 
+                  type="file" 
+                  ref={excelInputRef} 
+                  className="hidden" 
+                  accept=".xlsx, .xls"
+                  onChange={handleExcelFileSelect}
+              />
               <div 
-                onClick={() => setShowMappingModal(true)}
+                onClick={() => excelInputRef.current?.click()}
                 className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-2xl p-10 flex flex-col items-center justify-center hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer group"
               >
                  <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-full mb-4 group-hover:scale-110 transition-transform">
@@ -144,7 +215,7 @@ const ImportProducts = () => {
 
          {activeTab === 'manual' && (
            <div className="max-w-2xl mx-auto space-y-6">
-              {/* Image Upload Section */}
+              {/* Image Upload Section - For Product Image */}
               <div className="flex flex-col items-center gap-4">
                  <input 
                     type="file" 
@@ -184,49 +255,79 @@ const ImportProducts = () => {
                    <label className="block text-sm font-medium mb-1">商品名称</label>
                    <input 
                      type="text" 
+                     value={manualForm.name}
+                     onChange={e => setManualForm({...manualForm, name: e.target.value})}
                      className="w-full p-3 rounded-xl border dark:border-gray-600 dark:bg-gray-700 outline-none" 
                      placeholder="例如：阿莫西林胶囊"
-                     onBlur={(e) => {
-                         // Mock Duplicate Check Logic
-                         if(e.target.value === "阿莫西林胶囊") {
-                             if(confirm('系统检测到相似商品“阿莫西林胶囊”已存在 (相似度 100%)。\n是否直接为该商品新增批号？')) {
-                                 // Logic to switch to Add Batch mode would go here
-                                 alert('已切换至新增批号模式 (Mock)');
-                             }
-                         }
-                     }}
                    />
                  </div>
                  <div>
-                   <label className="block text-sm font-medium mb-1">批号</label>
-                   <input type="text" className="w-full p-3 rounded-xl border dark:border-gray-600 dark:bg-gray-700 outline-none" placeholder="2023..." />
+                   <label className="block text-sm font-medium mb-1">批号 (可扫码)</label>
+                   <div className="flex gap-2">
+                        <input 
+                            type="text" 
+                            value={manualForm.batchNumber}
+                            onChange={(e) => setManualForm({...manualForm, batchNumber: e.target.value})}
+                            className="w-full p-3 rounded-xl border dark:border-gray-600 dark:bg-gray-700 outline-none font-mono" 
+                            placeholder="输入或扫码" 
+                        />
+                        <button 
+                            onClick={() => setShowBarcodeScanner(true)}
+                            className="p-3 bg-gray-100 dark:bg-gray-700 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                            title="扫码"
+                        >
+                            <ScanLine className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                        </button>
+                   </div>
                  </div>
                  <div>
                    <label className="block text-sm font-medium mb-1">有效期</label>
-                   <input type="date" className="w-full p-3 rounded-xl border dark:border-gray-600 dark:bg-gray-700 outline-none" />
+                   <input 
+                        type="date" 
+                        value={manualForm.expiryDate}
+                        onChange={e => setManualForm({...manualForm, expiryDate: e.target.value})}
+                        className="w-full p-3 rounded-xl border dark:border-gray-600 dark:bg-gray-700 outline-none" 
+                   />
                  </div>
                  
-                 {/* Units Split */}
+                 {/* Units Split - Enforce default '整'/'散' */}
                  <div className="p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-100 dark:border-gray-600 col-span-2 grid grid-cols-2 gap-4">
                      <div>
-                        <label className="block text-sm font-medium mb-1 text-blue-600">整数量 (大单位)</label>
+                        <label className="block text-sm font-medium mb-1 text-blue-600">整数量 (大单位) *</label>
                         <div className="flex gap-2">
-                            <input type="number" className="w-full p-2 rounded-lg border dark:border-gray-600 dark:bg-gray-700 outline-none font-bold" placeholder="0" />
-                            <input type="text" className="w-16 p-2 rounded-lg border dark:border-gray-600 dark:bg-gray-700 text-center" placeholder="盒" defaultValue="盒"/>
+                            <input 
+                                type="number" 
+                                value={manualForm.quantityBig}
+                                onChange={e => setManualForm({...manualForm, quantityBig: Number(e.target.value)})}
+                                className="w-full p-2 rounded-lg border dark:border-gray-600 dark:bg-gray-700 outline-none font-bold" 
+                                placeholder="0" 
+                            />
+                            <input type="text" className="w-16 p-2 rounded-lg border dark:border-gray-600 dark:bg-gray-700 text-center" value="整" readOnly />
                         </div>
                      </div>
                      <div>
                         <label className="block text-sm font-medium mb-1 text-green-600">散数量 (小单位)</label>
                         <div className="flex gap-2">
-                            <input type="number" className="w-full p-2 rounded-lg border dark:border-gray-600 dark:bg-gray-700 outline-none font-bold" placeholder="0" />
-                            <input type="text" className="w-16 p-2 rounded-lg border dark:border-gray-600 dark:bg-gray-700 text-center" placeholder="粒" defaultValue="粒"/>
+                            <input 
+                                type="number" 
+                                value={manualForm.quantitySmall}
+                                onChange={e => setManualForm({...manualForm, quantitySmall: Number(e.target.value)})}
+                                className="w-full p-2 rounded-lg border dark:border-gray-600 dark:bg-gray-700 outline-none font-bold" 
+                                placeholder="0" 
+                            />
+                            <input type="text" className="w-16 p-2 rounded-lg border dark:border-gray-600 dark:bg-gray-700 text-center" value="散" readOnly />
                         </div>
                      </div>
                  </div>
 
                  <div className="col-span-2">
-                    <label className="block text-sm font-medium mb-1">备注</label>
-                    <textarea className="w-full p-3 rounded-xl border dark:border-gray-600 dark:bg-gray-700 outline-none h-20" placeholder="填写商品备注..."></textarea>
+                    <label className="block text-sm font-medium mb-1">备注 (仅限批号)</label>
+                    <textarea 
+                        value={manualForm.notes}
+                        onChange={e => setManualForm({...manualForm, notes: e.target.value})}
+                        className="w-full p-3 rounded-xl border dark:border-gray-600 dark:bg-gray-700 outline-none h-20" 
+                        placeholder="填写批号备注..."
+                    ></textarea>
                  </div>
               </div>
 

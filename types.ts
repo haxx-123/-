@@ -60,6 +60,7 @@ export interface Batch {
   unitSmall: string;
   conversionRate: number; 
   price?: number;
+  notes?: string; // 新增：仅限每个批号的备注
 }
 
 export interface Product {
@@ -68,7 +69,7 @@ export interface Product {
   category: string;
   sku: string;
   batches: Batch[];
-  image_url?: string;
+  image_url?: string; // 图片仅限母商品
   notes?: string;
   keywords?: string[]; 
 }

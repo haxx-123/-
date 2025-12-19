@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Filter, RotateCcw, AlertTriangle, Search, X, Calendar, User as UserIcon } from 'lucide-react';
-import { MOCK_LOGS, formatDate, MOCK_USERS } from '../constants';
+import { formatDate, MOCK_USERS } from '../constants';
 import { OperationLog, RoleLevel } from '../types';
 import UsernameBadge from '../components/UsernameBadge';
 import { useApp } from '../App';
@@ -75,33 +75,35 @@ const FilterModal = ({
 };
 
 const OperationLogs = () => {
-  const { setPageActions, isMobile } = useApp();
-  const [logs, setLogs] = useState<OperationLog[]>(MOCK_LOGS);
+  const { setPageActions, isMobile, logs, setLogs } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilter, setShowFilter] = useState(false);
   const [filters, setFilters] = useState<{ operator?: string; startDate?: string; endDate?: string }>({});
 
-  const filteredLogs = logs.filter(log => {
-    const matchesSearch = 
-      log.change_desc.includes(searchTerm) || 
-      log.operator_name.includes(searchTerm) ||
-      log.target_name.includes(searchTerm) ||
-      log.target_id.includes(searchTerm);
-    
-    const matchesOperator = filters.operator ? log.operator_name === filters.operator : true;
-    
-    let matchesDate = true;
-    if (filters.startDate) {
-       matchesDate = matchesDate && new Date(log.created_at) >= new Date(filters.startDate);
-    }
-    if (filters.endDate) {
-       const end = new Date(filters.endDate);
-       end.setDate(end.getDate() + 1);
-       matchesDate = matchesDate && new Date(log.created_at) < end;
-    }
+  // Fix Infinite Loop: Wrap filteredLogs in useMemo
+  const filteredLogs = useMemo(() => {
+    return logs.filter(log => {
+      const matchesSearch = 
+        log.change_desc.includes(searchTerm) || 
+        log.operator_name.includes(searchTerm) ||
+        log.target_name.includes(searchTerm) ||
+        log.target_id.includes(searchTerm);
+      
+      const matchesOperator = filters.operator ? log.operator_name === filters.operator : true;
+      
+      let matchesDate = true;
+      if (filters.startDate) {
+         matchesDate = matchesDate && new Date(log.created_at) >= new Date(filters.startDate);
+      }
+      if (filters.endDate) {
+         const end = new Date(filters.endDate);
+         end.setDate(end.getDate() + 1);
+         matchesDate = matchesDate && new Date(log.created_at) < end;
+      }
 
-    return matchesSearch && matchesOperator && matchesDate;
-  });
+      return matchesSearch && matchesOperator && matchesDate;
+    });
+  }, [logs, searchTerm, filters]); // Dependencies are now stable or primitive
 
   useEffect(() => {
     setPageActions({
@@ -125,7 +127,8 @@ const OperationLogs = () => {
     if (window.confirm(`确认要撤销此操作吗？\n${log.change_desc}`)) {
        const updatedLogs = logs.map(l => l.id === log.id ? { ...l, is_revoked: true } : l);
        setLogs(updatedLogs);
-       alert('操作已撤销 (数据已回滚)');
+       // In a real app, this would also need to revert the product state, but for this step we ensure Log state is persistent.
+       alert('操作已撤销 (标记回滚)');
     }
   };
 
