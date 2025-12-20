@@ -9,8 +9,8 @@ import { AnimatePresence, motion } from 'framer-motion';
 import html2canvas from 'html2canvas';
 import * as XLSX from 'xlsx';
 
-import { ThemeMode, RoleLevel, User, Store, Product, OperationLog, LoginRecord } from './types';
-import { THEMES, MOCK_USER, MOCK_STORES, MOCK_PRODUCTS, MOCK_LOGS, MOCK_USERS, MOCK_LOGIN_RECORDS } from './constants';
+import { ThemeMode, RoleLevel, User, Store, Product, OperationLog, LoginRecord, Announcement } from './types';
+import { THEMES, MOCK_USER, MOCK_STORES, MOCK_PRODUCTS, MOCK_LOGS, MOCK_USERS, MOCK_LOGIN_RECORDS, MOCK_ANNOUNCEMENTS } from './constants';
 import UsernameBadge from './components/UsernameBadge';
 import FaceID from './components/FaceID';
 import AnnouncementCenter from './components/AnnouncementCenter';
@@ -59,6 +59,10 @@ interface AppContextType {
   setUsers: React.Dispatch<React.SetStateAction<User[]>>;
   loginRecords: LoginRecord[];
   setLoginRecords: React.Dispatch<React.SetStateAction<LoginRecord[]>>;
+  stores: Store[]; 
+  setStores: React.Dispatch<React.SetStateAction<Store[]>>;
+  announcements: Announcement[];
+  setAnnouncements: React.Dispatch<React.SetStateAction<Announcement[]>>;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -81,30 +85,24 @@ const InstallAppFloating = () => {
   const [installPrompt, setInstallPrompt] = useState<any>(null);
   const [showIOSModal, setShowIOSModal] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
-  // Show by default for demo purposes so users know it exists, but handle logic
   const [isVisible, setIsVisible] = useState(true);
 
   useEffect(() => {
-    // Check if already installed
     if (window.matchMedia('(display-mode: standalone)').matches) {
       setIsInstalled(true);
       return;
     }
-
-    // Chrome/Android Logic
     const handler = (e: any) => {
       e.preventDefault();
       setInstallPrompt(e);
       setIsVisible(true);
     };
     window.addEventListener('beforeinstallprompt', handler);
-
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 
   const handleInstallClick = () => {
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-    
     if (isIOS && !isInstalled) {
       setShowIOSModal(true);
     } else if (installPrompt) {
@@ -116,7 +114,6 @@ const InstallAppFloating = () => {
         }
       });
     } else {
-       // Manual Fallback for browsers that don't support the prompt or haven't fired it yet
        alert("请点击浏览器菜单中的“添加到主屏幕”或“安装应用”");
     }
   };
@@ -160,10 +157,22 @@ const InstallAppFloating = () => {
 // --- Layout Components ---
 
 const Navbar = () => {
-  const { toggleSidebar, currentStore, setAnnouncementsOpen, user, isMobile } = useApp();
+  const { toggleSidebar, currentStore, setAnnouncementsOpen, user, isMobile, announcements } = useApp();
   const { handleCopy, handleExcel } = useContext(AppContext) as any;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
+  // Strict Permission Check for Excel
+  const hideExcel = user?.permissions?.hideExcelExport;
+
+  const unreadCount = announcements.filter(a => {
+      // Logic for "My Announcements"
+      if (a.hidden_by_users?.includes(user?.id || '')) return false;
+      if (user?.role === RoleLevel.ROOT) return false; // Root usually sees manage view
+      if (!a.target_userIds || a.target_userIds.length === 0) return !a.is_read;
+      if (a.target_userIds.includes(user?.id || '')) return !a.is_read;
+      return false;
+  }).length;
+
   const handleScreenshot = () => {
     const mainContent = document.getElementById('main-content');
     const sidebar = document.getElementById('app-sidebar');
@@ -172,13 +181,10 @@ const Navbar = () => {
     if (mainContent && sidebar && navbar) {
       const originalHeight = mainContent.style.height;
       const originalOverflow = mainContent.style.overflow;
-      
       mainContent.style.height = `${mainContent.scrollHeight}px`;
       mainContent.style.overflow = 'visible';
-      
       sidebar.style.display = 'none';
       navbar.style.display = 'none';
-      
       html2canvas(document.body, { 
           ignoreElements: (el) => el.id === 'app-sidebar' || el.id === 'app-navbar' || el.classList.contains('fixed-ui')
       }).then(canvas => {
@@ -186,7 +192,6 @@ const Navbar = () => {
         link.download = `prism-screenshot-${Date.now()}.png`;
         link.href = canvas.toDataURL();
         link.click();
-        
         mainContent.style.height = originalHeight;
         mainContent.style.overflow = originalOverflow;
         sidebar.style.display = '';
@@ -199,14 +204,15 @@ const Navbar = () => {
     <>
         <motion.button whileTap={{ scale: 0.9 }} onClick={() => setAnnouncementsOpen(true)} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 relative" title="公告">
             <Bell className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-            <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+            {unreadCount > 0 && <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}
         </motion.button>
         {handleCopy && (
             <motion.button whileTap={{ scale: 0.9 }} onClick={handleCopy} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700" title="复制当前页面信息">
             <Copy className="w-5 h-5 text-gray-600 dark:text-gray-300" />
             </motion.button>
         )}
-        {handleExcel && !user?.permissions?.hideExcelExport && (
+        {/* Strictly enforce Excel permission */}
+        {handleExcel && !hideExcel && (
             <motion.button whileTap={{ scale: 0.9 }} onClick={handleExcel} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700" title="导出Excel">
             <RefreshCw className="w-5 h-5 text-gray-600 dark:text-gray-300" />
             </motion.button>
@@ -224,19 +230,12 @@ const Navbar = () => {
           <Menu className="w-6 h-6 dark:text-white" />
         </button>
       </div>
-      
       <div className="hidden lg:flex items-center text-lg font-semibold dark:text-white">
         <img src={APP_LOGO_URL} alt="Logo" className="w-6 h-6 mr-3 rounded-md" />
         棱镜-StockWise <span className="mx-2 text-gray-400">/</span> {currentStore.name}
       </div>
-
       <div className="flex items-center space-x-2">
-         {/* Desktop View */}
-         <div className="hidden md:flex items-center space-x-2">
-            <ActionButtons />
-         </div>
-
-         {/* Mobile View - Collapsed Icon */}
+         <div className="hidden md:flex items-center space-x-2"><ActionButtons /></div>
          <div className="md:hidden relative">
             <motion.button 
                 whileTap={{ scale: 0.9 }} 
@@ -246,7 +245,6 @@ const Navbar = () => {
               <MoreHorizontal className="w-6 h-6 text-gray-700 dark:text-gray-300" />
               <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
             </motion.button>
-            
             {mobileMenuOpen && (
                 <div className="absolute right-0 top-12 bg-white dark:bg-gray-800 shadow-xl rounded-xl p-2 flex flex-col gap-2 border dark:border-gray-700 min-w-[50px] items-center animate-fade-in">
                     <ActionButtons />
@@ -263,6 +261,7 @@ const Sidebar = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Strict Permission Check for Menu Items
   const menuItems = [
     { path: '/', icon: LayoutDashboard, label: '仪表盘' },
     { path: '/inventory', icon: Package, label: '库存管理' },
@@ -279,26 +278,28 @@ const Sidebar = () => {
 
   return (
     <>
-      {isSidebarOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden" onClick={toggleSidebar}></div>
-      )}
-
+      {isSidebarOpen && <div className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden" onClick={toggleSidebar}></div>}
       <div id="app-sidebar" className={sidebarClass}>
         <div className="h-16 flex items-center px-6 border-b dark:border-gray-700">
            <img src={APP_LOGO_URL} alt="Prism" className="w-8 h-8 rounded-lg mr-3 shadow-md" />
            <span className="text-xl font-bold dark:text-white">棱镜 StockWise</span>
            <button onClick={toggleSidebar} className="ml-auto lg:hidden"><X className="w-5 h-5" /></button>
         </div>
-
         <div className="p-4">
           <button 
             onClick={() => setStoreManagerOpen(true)}
+            // Strict Permission Check for Store Edit Button
             disabled={user?.permissions?.hideStoreEdit}
-            className={`w-full py-2 px-4 mb-4 bg-gray-100 dark:bg-gray-800 rounded-xl flex items-center justify-between transition-colors ${user?.permissions?.hideStoreEdit ? 'opacity-70 cursor-not-allowed' : 'hover:bg-gray-200 dark:hover:bg-gray-700'}`}
+            className={`w-full py-2 px-4 mb-4 bg-gray-100 dark:bg-gray-800 rounded-xl flex items-center justify-between transition-colors ${user?.permissions?.hideStoreEdit ? 'opacity-50 cursor-not-allowed hidden' : 'hover:bg-gray-200 dark:hover:bg-gray-700'}`}
           >
             <span className="font-medium dark:text-gray-200 truncate pr-2">当前: {currentStore.name}</span>
-            {!user?.permissions?.hideStoreEdit && <RefreshCw className="w-4 h-4 text-gray-500 flex-shrink-0" />}
+            <RefreshCw className="w-4 h-4 text-gray-500 flex-shrink-0" />
           </button>
+          {user?.permissions?.hideStoreEdit && (
+             <div className="w-full py-2 px-4 mb-4 bg-gray-50 dark:bg-gray-900 rounded-xl flex items-center justify-between border dark:border-gray-700">
+                <span className="font-medium dark:text-gray-400 truncate text-sm">{currentStore.name}</span>
+             </div>
+          )}
 
           <nav className="space-y-1">
             {menuItems.filter(i => !i.hidden).map((item) => {
@@ -320,12 +321,8 @@ const Sidebar = () => {
             })}
           </nav>
         </div>
-        
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
-           <div 
-             className="flex items-center space-x-3 cursor-pointer p-2 rounded-xl hover:bg-white dark:hover:bg-gray-800 transition-colors"
-             onClick={() => navigate('/settings')}
-           >
+           <div className="flex items-center space-x-3 cursor-pointer p-2 rounded-xl hover:bg-white dark:hover:bg-gray-800 transition-colors" onClick={() => navigate('/settings')}>
               <div className="w-10 h-10 rounded-full bg-indigo-500 flex items-center justify-center text-white font-bold">
                  {user?.username[0]}
               </div>
@@ -342,35 +339,71 @@ const Sidebar = () => {
 };
 
 // --- In-Place View Containers ---
-
 const ModalContainer = ({ children, isOpen }: React.PropsWithChildren<{ isOpen: boolean }>) => {
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-[100] bg-black bg-opacity-50 flex items-center justify-center p-4 backdrop-blur-sm">
-       <motion.div 
-         initial={{ opacity: 0, scale: 0.95 }}
-         animate={{ opacity: 1, scale: 1 }}
-         className="bg-white dark:bg-gray-800 w-full max-w-4xl h-[80vh] rounded-2xl shadow-2xl overflow-hidden"
-       >
+       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white dark:bg-gray-800 w-full max-w-4xl h-[80vh] rounded-2xl shadow-2xl overflow-hidden">
          {children}
        </motion.div>
     </div>
   );
 }
 
-// --- Authentication ---
-
+// --- Authentication (Real Login Logic) ---
 const Login = () => {
-  const { login } = useApp();
+  const { login, users } = useApp();
+  const [inputName, setInputName] = useState('');
+  const [inputPass, setInputPass] = useState('');
   const [useFaceID, setUseFaceID] = useState(false);
+  const [targetFaceData, setTargetFaceData] = useState<string | undefined>(undefined);
   
   const handleLogin = () => {
-    login(MOCK_USER);
+    // 1. Strict Username Check
+    const userExists = users.find(u => u.username === inputName);
+    
+    if (!userExists) {
+        alert("用户名错误");
+        return;
+    }
+
+    // 2. Strict Password Check
+    if (userExists.password !== inputPass) {
+        alert("密码错误");
+        return;
+    }
+
+    login(userExists);
+  };
+
+  const handleFaceIDClick = () => {
+      let targetUser = users.find(u => u.username === inputName);
+      if (!targetUser && !inputName) {
+          // Default to first admin for demo convenience if input empty
+          targetUser = users.find(u => u.role === RoleLevel.ROOT);
+      }
+
+      if (targetUser) {
+          setTargetFaceData(targetUser.avatar); 
+          setUseFaceID(true);
+      } else {
+          alert("请输入用户名以便匹配人脸数据，或使用密码登录。");
+      }
+  };
+
+  const handleFaceSuccess = () => {
+      let targetUser = users.find(u => u.username === inputName);
+      if (!targetUser && !inputName) targetUser = users.find(u => u.role === RoleLevel.ROOT);
+
+      if (targetUser) {
+          login(targetUser);
+          setUseFaceID(false);
+      }
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900 px-4">
-      {useFaceID && <FaceID onSuccess={handleLogin} onCancel={() => setUseFaceID(false)} />}
+      {useFaceID && <FaceID onSuccess={handleFaceSuccess} onCancel={() => setUseFaceID(false)} storedFaceData={targetFaceData} />}
       <div className="w-full max-w-md bg-white dark:bg-gray-800 p-8 rounded-3xl shadow-xl">
         <div className="text-center mb-8">
            <img src={APP_LOGO_URL} alt="Logo" className="w-20 h-20 mx-auto mb-4 rounded-2xl shadow-lg" />
@@ -378,10 +411,22 @@ const Login = () => {
            <p className="text-gray-500 mt-2">智能库管系统</p>
         </div>
         <div className="space-y-4">
-          <input type="text" className="w-full px-4 py-3 rounded-xl border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="账号" />
-          <input type="password" className="w-full px-4 py-3 rounded-xl border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="密码" />
+          <input 
+            type="text" 
+            value={inputName}
+            onChange={e => setInputName(e.target.value)}
+            className="w-full px-4 py-3 rounded-xl border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 outline-none" 
+            placeholder="用户名 (如: 管理员)" 
+          />
+          <input 
+            type="password" 
+            value={inputPass}
+            onChange={e => setInputPass(e.target.value)}
+            className="w-full px-4 py-3 rounded-xl border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 outline-none" 
+            placeholder="密码" 
+          />
           <motion.button whileTap={{ scale: 0.98 }} onClick={handleLogin} className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-600/30">登录</motion.button>
-          <motion.button whileTap={{ scale: 0.98 }} onClick={() => setUseFaceID(true)} className="w-full py-3 border-2 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 rounded-xl font-bold hover:bg-gray-50 flex items-center justify-center gap-2"><UserCircle className="w-5 h-5" /> 人脸识别登录</motion.button>
+          <motion.button whileTap={{ scale: 0.98 }} onClick={handleFaceIDClick} className="w-full py-3 border-2 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 rounded-xl font-bold hover:bg-gray-50 flex items-center justify-center gap-2"><UserCircle className="w-5 h-5" /> 人脸识别登录</motion.button>
         </div>
       </div>
     </div>
@@ -389,16 +434,12 @@ const Login = () => {
 };
 
 // --- Main Layout & Splash ---
-
 const SplashScreen = ({ onFinish }: { onFinish: () => void }) => {
   useEffect(() => {
     const timer = setTimeout(() => {
        const el = document.getElementById('splash-screen');
-       if (el) {
-         el.style.opacity = '0';
-         el.style.visibility = 'hidden';
-       }
-       setTimeout(onFinish, 800); // Wait for fade out
+       if (el) { el.style.opacity = '0'; el.style.visibility = 'hidden'; }
+       setTimeout(onFinish, 800); 
     }, 2500);
     return () => clearTimeout(timer);
   }, [onFinish]);
@@ -409,53 +450,31 @@ const SplashScreen = ({ onFinish }: { onFinish: () => void }) => {
          <img src={APP_LOGO_URL} alt="Logo" className="w-24 h-24 rounded-2xl shadow-xl mb-6" />
          <h1 className="text-3xl font-bold text-gray-800 tracking-wider">棱镜</h1>
          <p className="text-gray-500 mt-2 mb-10">StockWise-智能库管系统</p>
-         
-         <div className="mt-10">
-            <img src={SIGNATURE_URL} alt="Signature" className="h-16 opacity-80" />
-         </div>
+         <div className="mt-10"><img src={SIGNATURE_URL} alt="Signature" className="h-16 opacity-80" /></div>
       </div>
     </div>
   );
 };
 
 const PageWrapper = ({ children }: { children?: React.ReactNode }) => (
-  <motion.div
-    initial={{ opacity: 0, x: 20 }}
-    animate={{ opacity: 1, x: 0 }}
-    exit={{ opacity: 0, x: -20 }}
-    transition={{ duration: 0.3 }}
-  >
-    <Suspense fallback={<LoadingScreen />}>
-      {children}
-    </Suspense>
+  <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
+    <Suspense fallback={<LoadingScreen />}>{children}</Suspense>
   </motion.div>
 );
 
 const MainLayout = () => {
   const { user, announcementsOpen, setAnnouncementsOpen, storeManagerOpen, setStoreManagerOpen } = useApp();
   const location = useLocation();
-
   if (!user) return <Login />;
-
   return (
-    // Removed bg-gray-50 to allow body color to shine through for Prism themes
     <div className="min-h-screen text-gray-900 dark:text-gray-100 transition-colors duration-300 font-sans">
       <Sidebar />
       <Navbar />
       <InstallAppFloating />
-      
-      {/* In-Place View Switchers (Modals acting as Apps) */}
-      <ModalContainer isOpen={announcementsOpen}>
-        <AnnouncementCenter onClose={() => setAnnouncementsOpen(false)} />
-      </ModalContainer>
-      
-      <ModalContainer isOpen={storeManagerOpen}>
-        <StoreManager onClose={() => setStoreManagerOpen(false)} />
-      </ModalContainer>
-
+      <ModalContainer isOpen={announcementsOpen}><AnnouncementCenter onClose={() => setAnnouncementsOpen(false)} /></ModalContainer>
+      <ModalContainer isOpen={storeManagerOpen}><StoreManager onClose={() => setStoreManagerOpen(false)} /></ModalContainer>
       <main id="main-content" className="lg:pl-64 pt-16 min-h-screen transition-all">
         <div className="p-4 lg:p-8 max-w-7xl mx-auto">
-           {/* Re-introduced AnimatePresence for Page Transitions */}
            <AnimatePresence mode="wait">
              <Routes location={location} key={location.pathname}>
                <Route path="/" element={<PageWrapper><Dashboard /></PageWrapper>} />
@@ -483,23 +502,21 @@ const AppContent = () => {
   const [appReady, setAppReady] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   
-  // Dynamic Page Actions
   const [pageActions, setPageActions] = useState<PageActions>({});
 
-  // --- GLOBAL STATE LIFTED UP FOR PERSISTENCE ---
   const [products, setProducts] = useState<Product[]>(MOCK_PRODUCTS);
   const [logs, setLogs] = useState<OperationLog[]>(MOCK_LOGS);
   const [users, setUsers] = useState<User[]>(MOCK_USERS);
   const [loginRecords, setLoginRecords] = useState<LoginRecord[]>(MOCK_LOGIN_RECORDS);
+  const [stores, setStores] = useState<Store[]>(MOCK_STORES); 
+  const [announcements, setAnnouncements] = useState<Announcement[]>(MOCK_ANNOUNCEMENTS);
 
-  // Mobile Detection
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Prefetch critical pages on idle
   useEffect(() => {
     if (appReady && (window as any).requestIdleCallback) {
       (window as any).requestIdleCallback(() => {
@@ -509,64 +526,66 @@ const AppContent = () => {
     }
   }, [appReady]);
 
-  // --- STRICT THEME APPLICATION LOGIC ---
   useEffect(() => {
     const root = window.document.documentElement;
     root.classList.remove('dark', 'theme-prism-light', 'theme-prism-dark');
-    
-    if (theme === 'dark') {
-        root.classList.add('dark');
-        root.style.backgroundColor = '#000000'; // Pure Black
-    } else if (theme === 'prism-light') {
-        root.classList.add('theme-prism-light');
-        // Note: Strict colors are applied via CSS in index.html targeting .theme-prism-light body
-    } else if (theme === 'prism-dark') {
-        root.classList.add('dark', 'theme-prism-dark');
-    } else {
-        root.style.backgroundColor = '#ffffff'; // White
-    }
+    if (theme === 'dark') { root.classList.add('dark'); root.style.backgroundColor = '#000000'; }
+    else if (theme === 'prism-light') { root.classList.add('theme-prism-light'); }
+    else if (theme === 'prism-dark') { root.classList.add('dark', 'theme-prism-dark'); }
+    else { root.style.backgroundColor = '#ffffff'; }
   }, [theme]);
 
-  // Session Storage Logic for Announcements
   useEffect(() => {
     if (user && appReady) {
-        const today = new Date().toISOString().split('T')[0];
-        const key = `hasViewedPopup_${today}`;
-        const hasViewed = sessionStorage.getItem(key);
-        
-        if (!hasViewed) {
-            const hasActivePopup = true; 
-            if (hasActivePopup) {
-                setAnnouncementsOpen(true);
+        // Strict Popup Logic per PDF
+        // Check for announcements that have popup enabled and haven't been viewed in this session
+        const popups = announcements.filter(a => 
+            a.popup_config?.enabled && 
+            (!a.target_userIds || a.target_userIds.includes(user.id)) &&
+            (!a.target_roles || a.target_roles.length === 0 || a.target_roles.includes(user.role))
+        );
+
+        let showPopup = false;
+        for (const p of popups) {
+            // Check sessionStorage
+            const key = `hasViewedPopup_${p.id}_${user.id}`;
+            const hasViewed = sessionStorage.getItem(key);
+            if (!hasViewed) {
+                showPopup = true;
                 sessionStorage.setItem(key, 'true');
+                break; // Trigger open, the Announcement Center will handle showing the list
             }
         }
+
+        if (showPopup) {
+            setAnnouncementsOpen(true);
+        }
     }
-  }, [user, appReady]);
+  }, [user, appReady, announcements]);
 
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
   
   const login = (u: User) => {
-      // Ensure we use the user from the global 'users' state if possible, so permissions are up to date
+      // Always pull latest data from global users state to ensure permissions are up to date
       const freshUser = users.find(existing => existing.id === u.id) || u;
       setUser(freshUser);
 
-      // Add Login Record
       const newRecord: LoginRecord = {
           id: `login_${Date.now()}`,
           user_id: freshUser.id,
           user_name: freshUser.username,
           device_name: navigator.userAgent.includes('Mobile') ? 'Mobile Device' : 'Desktop PC',
-          ip_address: '192.168.1.x', // Mock IP
+          ip_address: '192.168.1.x',
           login_at: new Date().toISOString()
       };
       setLoginRecords(prev => [newRecord, ...prev]);
   };
   
-  const logout = () => {
-      setUser(null);
-      sessionStorage.clear(); // Clear all session storage on logout
+  const logout = () => { 
+      setUser(null); 
+      sessionStorage.clear(); // Clear session storage on logout as per requirements
   };
+  
   const setTheme = (t: ThemeMode) => setThemeState(t);
 
   return (
@@ -580,18 +599,15 @@ const AppContent = () => {
       handleCopy: pageActions.handleCopy,
       handleExcel: pageActions.handleExcel,
       isMobile,
-      // Global State Persistence
       products, setProducts,
       logs, setLogs,
       users, setUsers,
-      loginRecords, setLoginRecords
+      loginRecords, setLoginRecords,
+      stores, setStores,
+      announcements, setAnnouncements
     }}>
       {!appReady && <SplashScreen onFinish={() => setAppReady(true)} />}
-      {appReady && (
-        <Router>
-          <MainLayout />
-        </Router>
-      )}
+      {appReady && <Router><MainLayout /></Router>}
     </AppContext.Provider>
   );
 };

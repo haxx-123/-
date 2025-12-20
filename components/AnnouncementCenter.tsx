@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { X, Trash2, Edit3, Send, AlertCircle, Bold, Italic, Underline, Image as ImageIcon, Link, AlignLeft, AlignCenter, AlignRight, Users, Filter, ArrowLeft, MoreHorizontal, Eye } from 'lucide-react';
 import { Announcement, RoleLevel, AnnouncementFrequency } from '../types';
-import { MOCK_USERS } from '../constants';
-import UsernameBadge from './UsernameBadge';
 import { useApp } from '../App';
+import UsernameBadge from './UsernameBadge';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface AnnouncementCenterProps {
@@ -26,16 +25,11 @@ const RichToolbar = () => (
 );
 
 const AnnouncementCenter: React.FC<AnnouncementCenterProps> = ({ onClose }) => {
-  const { user } = useApp();
+  const { user, announcements, setAnnouncements, users } = useApp();
   const [view, setView] = useState<'list' | 'detail'>('list');
   const [activeTab, setActiveTab] = useState<'my' | 'publish' | 'manage' | 'suggestion'>('my');
   const [selectedAnnouncement, setSelectedAnnouncement] = useState<Announcement | null>(null);
   
-  const [announcements, setAnnouncements] = useState<Announcement[]>([
-    { id: 'a1', title: '系统维护通知', content: '系统将于今晚进行维护。', author_id: 'u_001', author_name: 'AdminMaster', author_role: RoleLevel.ROOT, created_at: new Date().toISOString(), target_roles: [], is_read: false, type: 'notice' },
-    { id: 'a2', title: '盘点提醒', content: '请各门店本周五前完成盘点。', author_id: 'u_001', author_name: 'AdminMaster', author_role: RoleLevel.ROOT, created_at: new Date().toISOString(), target_roles: [], target_userIds: ['u_002', 'u_003'], is_read: true, type: 'notice' },
-  ]);
-
   const [publishForm, setPublishForm] = useState({ 
       title: '', 
       content: '', 
@@ -123,7 +117,7 @@ const AnnouncementCenter: React.FC<AnnouncementCenterProps> = ({ onClose }) => {
       return ann.author_id === manageFilterUser;
   });
 
-  const availableManageUsers = MOCK_USERS.filter(u => {
+  const availableManageUsers = users.filter(u => {
       if (user?.role === RoleLevel.ROOT) return true;
       if (u.id === user?.id) return true;
       return user?.role && u.role > user.role; 
@@ -261,7 +255,7 @@ const AnnouncementCenter: React.FC<AnnouncementCenterProps> = ({ onClose }) => {
                        <Users className="w-4 h-4" /> 接收对象 (默认排除00)
                    </label>
                    <div className="p-3 border rounded-xl dark:border-gray-600 max-h-40 overflow-y-auto bg-gray-50 dark:bg-gray-800">
-                      {MOCK_USERS.map(u => {
+                      {users.map(u => {
                         const is00 = u.role === RoleLevel.ROOT;
                         return (
                             <label key={u.id} className="flex items-center space-x-3 p-2 hover:bg-white dark:hover:bg-gray-700 rounded-lg cursor-pointer">

@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { X, Plus, Store as StoreIcon, Settings, Trash2, ArrowLeft, CheckCircle, Users, Eye } from 'lucide-react';
-import { MOCK_STORES, MOCK_USERS } from '../constants';
+import { X, Plus, Store as StoreIcon, Settings, Trash2, ArrowLeft, CheckCircle, Users, Eye, CornerDownRight, ChevronDown, ChevronRight } from 'lucide-react';
 import { Store, RoleLevel, User } from '../types';
 import { useApp } from '../App';
 import UsernameBadge from './UsernameBadge';
@@ -10,12 +9,15 @@ interface StoreManagerProps {
 }
 
 const StoreManager: React.FC<StoreManagerProps> = ({ onClose }) => {
-  const { currentStore, setCurrentStore, user } = useApp();
-  const [stores, setStores] = useState<Store[]>(MOCK_STORES);
+  const { currentStore, setCurrentStore, user, stores, setStores, users } = useApp();
   
   // Views: 'list', 'edit', 'new'
   const [view, setView] = useState<'list' | 'edit' | 'new'>('list');
   const [editingStore, setEditingStore] = useState<Store | null>(null);
+  
+  // Collapsible state for manager/viewer selection
+  const [showManagerSelect, setShowManagerSelect] = useState(false);
+  const [showViewerSelect, setShowViewerSelect] = useState(false);
 
   // -- Actions --
 
@@ -26,6 +28,8 @@ const StoreManager: React.FC<StoreManagerProps> = ({ onClose }) => {
 
   const handleEdit = (store: Store) => {
     setEditingStore({...store});
+    setShowManagerSelect(false);
+    setShowViewerSelect(false);
     setView('edit');
   };
 
@@ -38,6 +42,8 @@ const StoreManager: React.FC<StoreManagerProps> = ({ onClose }) => {
         managerIds: [user?.id || ''], // Creator is manager by default
         viewerIds: []
     });
+    setShowManagerSelect(false);
+    setShowViewerSelect(false);
     setView('new');
   };
 
@@ -154,60 +160,79 @@ const StoreManager: React.FC<StoreManagerProps> = ({ onClose }) => {
             )}
 
             {/* Permission Management: Managers & Viewers */}
-            <div className="border-t dark:border-gray-700 pt-4">
+            <div className="border-t dark:border-gray-700 pt-4 space-y-4">
                <h4 className="font-bold mb-3 text-gray-700 dark:text-gray-300">权限配置</h4>
                
-               <div className="mb-4">
-                   <label className="block text-sm font-medium mb-1 flex items-center gap-2">
-                       <Users className="w-4 h-4 text-blue-500"/> 门店管理员 (可操作)
-                   </label>
-                   <div className="p-3 border rounded-xl dark:border-gray-600 max-h-32 overflow-y-auto bg-white dark:bg-gray-800">
-                        {/* 00 Users are implicitly managers but hidden from list */}
-                        {MOCK_USERS.filter(u => u.role !== RoleLevel.ROOT).map(u => (
-                            <label key={u.id} className="flex items-center justify-between py-1 px-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded cursor-pointer">
-                                <div className="flex items-center gap-2">
-                                    <input 
-                                        type="checkbox" 
-                                        checked={editingStore.managerIds?.includes(u.id)}
-                                        onChange={() => setEditingStore({
-                                            ...editingStore, 
-                                            managerIds: toggleId(editingStore.managerIds, u.id),
-                                            viewerIds: editingStore.viewerIds?.filter(vid => vid !== u.id) 
-                                        })}
-                                        disabled={u.id === user?.id} // Cannot remove self from managers if not 00
-                                    />
-                                    <UsernameBadge name={u.username} roleLevel={u.role} />
-                                </div>
-                            </label>
-                        ))}
-                   </div>
-                   <p className="text-xs text-gray-400 mt-1">管理员拥有修改、调整、开单、导入等全部权限 (00权限用户默认拥有所有权限，且不在此显示)。</p>
+               {/* Manager Selection */}
+               <div className="border rounded-xl dark:border-gray-600 overflow-hidden bg-white dark:bg-gray-800">
+                   <button 
+                     onClick={() => setShowManagerSelect(!showManagerSelect)}
+                     className="w-full flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-700"
+                   >
+                       <span className="flex items-center gap-2 font-medium">
+                           <Users className="w-4 h-4 text-blue-500"/> 门店管理员 (可操作)
+                       </span>
+                       {showManagerSelect ? <ChevronDown className="w-4 h-4"/> : <ChevronRight className="w-4 h-4"/>}
+                   </button>
+                   
+                   {showManagerSelect && (
+                       <div className="p-3 border-t dark:border-gray-600 max-h-48 overflow-y-auto bg-gray-50 dark:bg-gray-900/50">
+                            {users.filter(u => u.role !== RoleLevel.ROOT).map(u => (
+                                <label key={u.id} className="flex items-center justify-between py-2 px-2 hover:bg-white dark:hover:bg-gray-700 rounded cursor-pointer">
+                                    <div className="flex items-center gap-2">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={editingStore.managerIds?.includes(u.id)}
+                                            onChange={() => setEditingStore({
+                                                ...editingStore, 
+                                                managerIds: toggleId(editingStore.managerIds, u.id),
+                                                viewerIds: editingStore.viewerIds?.filter(vid => vid !== u.id) 
+                                            })}
+                                            disabled={u.id === user?.id} // Cannot remove self from managers if not 00
+                                        />
+                                        <UsernameBadge name={u.username} roleLevel={u.role} />
+                                    </div>
+                                </label>
+                            ))}
+                       </div>
+                   )}
+                   <div className="px-3 pb-3 text-xs text-gray-400 mt-1">管理员拥有修改、调整、开单、导入等全部权限。</div>
                </div>
 
-               <div>
-                   <label className="block text-sm font-medium mb-1 flex items-center gap-2">
-                       <Eye className="w-4 h-4 text-green-500"/> 门店浏览者 (仅查看)
-                   </label>
-                   <div className="p-3 border rounded-xl dark:border-gray-600 max-h-32 overflow-y-auto bg-white dark:bg-gray-800">
-                        {MOCK_USERS.filter(u => u.role !== RoleLevel.ROOT).map(u => (
-                            <label key={u.id} className="flex items-center justify-between py-1 px-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded cursor-pointer">
-                                <div className="flex items-center gap-2">
-                                    <input 
-                                        type="checkbox" 
-                                        checked={editingStore.viewerIds?.includes(u.id)}
-                                        onChange={() => setEditingStore({
-                                            ...editingStore, 
-                                            viewerIds: toggleId(editingStore.viewerIds, u.id),
-                                            managerIds: editingStore.managerIds?.filter(mid => mid !== u.id) 
-                                        })}
-                                        disabled={editingStore.managerIds?.includes(u.id)} 
-                                    />
-                                    <UsernameBadge name={u.username} roleLevel={u.role} />
-                                </div>
-                            </label>
-                        ))}
-                   </div>
-                   <p className="text-xs text-gray-400 mt-1">浏览者仅可查看数据，无法进行任何修改操作。</p>
+               {/* Viewer Selection */}
+               <div className="border rounded-xl dark:border-gray-600 overflow-hidden bg-white dark:bg-gray-800">
+                   <button 
+                     onClick={() => setShowViewerSelect(!showViewerSelect)}
+                     className="w-full flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-700"
+                   >
+                       <span className="flex items-center gap-2 font-medium">
+                           <Eye className="w-4 h-4 text-green-500"/> 门店浏览者 (仅查看)
+                       </span>
+                       {showViewerSelect ? <ChevronDown className="w-4 h-4"/> : <ChevronRight className="w-4 h-4"/>}
+                   </button>
+                   
+                   {showViewerSelect && (
+                       <div className="p-3 border-t dark:border-gray-600 max-h-48 overflow-y-auto bg-gray-50 dark:bg-gray-900/50">
+                            {users.filter(u => u.role !== RoleLevel.ROOT).map(u => (
+                                <label key={u.id} className="flex items-center justify-between py-2 px-2 hover:bg-white dark:hover:bg-gray-700 rounded cursor-pointer">
+                                    <div className="flex items-center gap-2">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={editingStore.viewerIds?.includes(u.id)}
+                                            onChange={() => setEditingStore({
+                                                ...editingStore, 
+                                                viewerIds: toggleId(editingStore.viewerIds, u.id),
+                                                managerIds: editingStore.managerIds?.filter(mid => mid !== u.id) 
+                                            })}
+                                            disabled={editingStore.managerIds?.includes(u.id)} 
+                                        />
+                                        <UsernameBadge name={u.username} roleLevel={u.role} />
+                                    </div>
+                                </label>
+                            ))}
+                       </div>
+                   )}
+                   <div className="px-3 pb-3 text-xs text-gray-400 mt-1">浏览者仅可查看数据，无法进行任何修改操作。</div>
                </div>
             </div>
 
@@ -249,6 +274,9 @@ const StoreManager: React.FC<StoreManagerProps> = ({ onClose }) => {
                   // 00 is implicitly a manager for everything
                   const canManage = isRoot || isManager;
 
+                  // Find parent store info for child stores
+                  const parentStore = !isParent && store.parentId ? stores.find(s => s.id === store.parentId) : null;
+
                   return (
                     <div 
                       key={store.id} 
@@ -270,7 +298,15 @@ const StoreManager: React.FC<StoreManagerProps> = ({ onClose }) => {
                       
                       <div className="mt-4 cursor-pointer" onClick={() => handleSwitchStore(store)}>
                         <h3 className="text-lg font-bold">{store.name}</h3>
-                        <p className="text-sm text-gray-500">{isParent ? '母门店 (总店)' : '子门店'}</p>
+                        <p className="text-sm text-gray-500 mb-1">{isParent ? '母门店 (总店)' : '子门店'}</p>
+                        
+                        {/* Display Parent Store for Child Stores */}
+                        {parentStore && (
+                            <div className="flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 px-2 py-1 rounded-lg w-fit mt-1">
+                                <CornerDownRight className="w-3 h-3" />
+                                <span>所属母门店: {parentStore.name}</span>
+                            </div>
+                        )}
                       </div>
                       
                       {isParent && store.childrenIds && (
@@ -297,8 +333,8 @@ const StoreManager: React.FC<StoreManagerProps> = ({ onClose }) => {
                   );
                 })}
 
-                {/* Add New Store - Only for Root */}
-                {(user?.role === RoleLevel.ROOT) && (
+                {/* Add New Store - Enforce hideNewStore permission */}
+                {(!user?.permissions?.hideNewStore) && (
                   <button 
                     onClick={handleCreate}
                     className="flex flex-col items-center justify-center p-6 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-600 text-gray-400 hover:border-orange-500 hover:text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-900/10 transition-all bg-transparent h-full min-h-[200px]"

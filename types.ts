@@ -33,6 +33,7 @@ export interface UserPermissions {
 export interface User {
   id: string;
   username: string;
+  password?: string; // 新增密码字段用于登录验证
   role: RoleLevel;
   avatar?: string;
   storeId?: string; 
@@ -60,16 +61,17 @@ export interface Batch {
   unitSmall: string;
   conversionRate: number; 
   price?: number;
-  notes?: string; // 新增：仅限每个批号的备注
+  notes?: string;
 }
 
 export interface Product {
   id: string;
+  storeId: string; // 核心：数据隔离字段
   name: string;
   category: string;
   sku: string;
   batches: Batch[];
-  image_url?: string; // 图片仅限母商品
+  image_url?: string;
   notes?: string;
   keywords?: string[]; 
 }
