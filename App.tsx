@@ -1,4 +1,4 @@
-import React, { useState, useEffect, createContext, useContext, Suspense, lazy } from 'react';
+import React, { useState, useEffect, createContext, useContext, Suspense, lazy, useRef } from 'react';
 import { HashRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { 
   Menu, X, LayoutDashboard, Package, Import, History, 
@@ -26,6 +26,7 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 
 // Constants for Images
 const APP_LOGO_URL = "https://i.ibb.co/vxq7QfYd/retouch-2025121423241826.png";
+const PWA_ICON_URL = "https://i.ibb.co/TBxHgV10/IMG-20251214-191059.png";
 const SIGNATURE_URL = "https://i.ibb.co/8gLfYKCW/retouch-2025121313394035.png";
 
 // --- Global Context ---
@@ -85,25 +86,42 @@ const InstallAppFloating = () => {
   const [installPrompt, setInstallPrompt] = useState<any>(null);
   const [showIOSModal, setShowIOSModal] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
-  const [isVisible, setIsVisible] = useState(true);
+  const [isVisible, setIsVisible] = useState(false); // Initially hidden for Android/Chrome logic
 
   useEffect(() => {
+    // Check if already installed
     if (window.matchMedia('(display-mode: standalone)').matches) {
       setIsInstalled(true);
       return;
     }
+
+    // Android/Chrome: Listen for beforeinstallprompt
     const handler = (e: any) => {
       e.preventDefault();
       setInstallPrompt(e);
-      setIsVisible(true);
+      setIsVisible(true); // Show button only when event fires
     };
     window.addEventListener('beforeinstallprompt', handler);
+
+    // iOS Detection
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+    if (isIOS) {
+        setIsVisible(true); // Always show for iOS if not installed
+    }
+
+    // PC/Other: Default behavior (if we want to show it always on PC, we can set true, but adhering to "Smart Logic")
+    // If not mobile and not installed, show it for manual install trigger if available
+    if (!isIOS && !/Android/.test(navigator.userAgent)) {
+        setIsVisible(true);
+    }
+
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 
   const handleInstallClick = () => {
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-    if (isIOS && !isInstalled) {
+    
+    if (isIOS) {
       setShowIOSModal(true);
     } else if (installPrompt) {
       installPrompt.prompt();
@@ -114,36 +132,35 @@ const InstallAppFloating = () => {
         }
       });
     } else {
-       alert("请点击浏览器菜单中的“添加到主屏幕”或“安装应用”");
+       // PC Fallback or if prompt not ready
+       alert("请点击浏览器地址栏右侧的安装图标，或在菜单中选择“安装应用”");
     }
   };
 
-  if (isInstalled) return null;
+  if (isInstalled || !isVisible) return null;
 
   return (
     <>
-      {isVisible && (
-        <motion.button 
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={handleInstallClick}
-            className="fixed top-20 right-4 z-50 p-3 bg-blue-600 text-white rounded-full shadow-xl shadow-blue-600/40 hover:bg-blue-700 transition-colors animate-bounce-slow"
-            title="安装应用"
-        >
-            <Download className="w-6 h-6" />
-        </motion.button>
-      )}
+      <motion.button 
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.9 }}
+          onClick={handleInstallClick}
+          className="fixed top-20 right-4 z-50 p-3 bg-blue-600 text-white rounded-full shadow-xl shadow-blue-600/40 hover:bg-blue-700 transition-colors animate-bounce-slow"
+          title="安装应用"
+      >
+          <Download className="w-6 h-6" />
+      </motion.button>
 
       {showIOSModal && (
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black bg-opacity-60 backdrop-blur-sm p-4" onClick={() => setShowIOSModal(false)}>
            <div className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative animate-slide-up" onClick={e => e.stopPropagation()}>
               <button onClick={() => setShowIOSModal(false)} className="absolute top-4 right-4 text-gray-400"><X className="w-5 h-5"/></button>
               <div className="flex flex-col items-center text-center">
-                 <img src={APP_LOGO_URL} alt="Icon" className="w-16 h-16 rounded-2xl mb-4 shadow-lg" />
+                 <img src={PWA_ICON_URL} alt="PWA Icon" className="w-16 h-16 rounded-2xl mb-4 shadow-lg" />
                  <h3 className="text-lg font-bold mb-2 dark:text-white">安装到 iPhone/iPad</h3>
-                 <p className="text-sm text-gray-500 mb-6">
-                    1. 点击浏览器底部的 <span className="font-bold text-blue-600"><Share className="w-4 h-4 inline"/> 分享</span> 按钮 <br/>
-                    2. 向下滑动并选择 <span className="font-bold text-gray-800 dark:text-gray-200">"添加到主屏幕"</span>
+                 <p className="text-sm text-gray-500 mb-6 leading-relaxed">
+                    请点击浏览器底部的 <span className="font-bold text-blue-600 inline-flex items-center mx-1"><Share className="w-4 h-4"/></span> 按钮<br/>
+                    然后选择 <span className="font-bold text-gray-800 dark:text-gray-200">“添加到主屏幕”</span>
                  </p>
                  <button onClick={() => setShowIOSModal(false)} className="text-blue-600 font-bold">知道了</button>
               </div>
@@ -504,12 +521,88 @@ const AppContent = () => {
   
   const [pageActions, setPageActions] = useState<PageActions>({});
 
-  const [products, setProducts] = useState<Product[]>(MOCK_PRODUCTS);
-  const [logs, setLogs] = useState<OperationLog[]>(MOCK_LOGS);
-  const [users, setUsers] = useState<User[]>(MOCK_USERS);
-  const [loginRecords, setLoginRecords] = useState<LoginRecord[]>(MOCK_LOGIN_RECORDS);
-  const [stores, setStores] = useState<Store[]>(MOCK_STORES); 
-  const [announcements, setAnnouncements] = useState<Announcement[]>(MOCK_ANNOUNCEMENTS);
+  // Real-time State
+  const [products, setProductsRaw] = useState<Product[]>(MOCK_PRODUCTS);
+  const [logs, setLogsRaw] = useState<OperationLog[]>(MOCK_LOGS);
+  const [users, setUsersRaw] = useState<User[]>(MOCK_USERS);
+  const [loginRecords, setLoginRecordsRaw] = useState<LoginRecord[]>(MOCK_LOGIN_RECORDS);
+  const [stores, setStoresRaw] = useState<Store[]>(MOCK_STORES); 
+  const [announcements, setAnnouncementsRaw] = useState<Announcement[]>(MOCK_ANNOUNCEMENTS);
+
+  const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
+
+  // Initialize BroadcastChannel
+  useEffect(() => {
+    broadcastChannelRef.current = new BroadcastChannel('stockwise_sync');
+    broadcastChannelRef.current.onmessage = (event) => {
+        const { type, payload } = event.data;
+        // console.log("Received broadcast:", type, payload); // Debugging
+        switch(type) {
+            case 'PRODUCTS': setProductsRaw(payload); break;
+            case 'LOGS': setLogsRaw(payload); break;
+            case 'USERS': setUsersRaw(payload); break;
+            case 'STORES': setStoresRaw(payload); break;
+            case 'ANNOUNCEMENTS': setAnnouncementsRaw(payload); break;
+            case 'LOGIN_RECORDS': setLoginRecordsRaw(payload); break;
+        }
+    };
+    return () => {
+        broadcastChannelRef.current?.close();
+    };
+  }, []);
+
+  // Broadcasting Setters (Wrappers)
+  const broadcast = (type: string, payload: any) => {
+      broadcastChannelRef.current?.postMessage({ type, payload });
+  };
+
+  const setProducts: React.Dispatch<React.SetStateAction<Product[]>> = (value) => {
+      setProductsRaw(prev => {
+          const next = typeof value === 'function' ? (value as any)(prev) : value;
+          broadcast('PRODUCTS', next);
+          return next;
+      });
+  };
+
+  const setLogs: React.Dispatch<React.SetStateAction<OperationLog[]>> = (value) => {
+      setLogsRaw(prev => {
+          const next = typeof value === 'function' ? (value as any)(prev) : value;
+          broadcast('LOGS', next);
+          return next;
+      });
+  };
+
+  const setUsers: React.Dispatch<React.SetStateAction<User[]>> = (value) => {
+      setUsersRaw(prev => {
+          const next = typeof value === 'function' ? (value as any)(prev) : value;
+          broadcast('USERS', next);
+          return next;
+      });
+  };
+
+  const setStores: React.Dispatch<React.SetStateAction<Store[]>> = (value) => {
+      setStoresRaw(prev => {
+          const next = typeof value === 'function' ? (value as any)(prev) : value;
+          broadcast('STORES', next);
+          return next;
+      });
+  };
+
+  const setAnnouncements: React.Dispatch<React.SetStateAction<Announcement[]>> = (value) => {
+      setAnnouncementsRaw(prev => {
+          const next = typeof value === 'function' ? (value as any)(prev) : value;
+          broadcast('ANNOUNCEMENTS', next);
+          return next;
+      });
+  };
+
+  const setLoginRecords: React.Dispatch<React.SetStateAction<LoginRecord[]>> = (value) => {
+      setLoginRecordsRaw(prev => {
+          const next = typeof value === 'function' ? (value as any)(prev) : value;
+          broadcast('LOGIN_RECORDS', next);
+          return next;
+      });
+  };
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
