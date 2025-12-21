@@ -11,11 +11,12 @@ import html2canvas from 'html2canvas';
 import * as XLSX from 'xlsx';
 
 import { ThemeMode, RoleLevel, User, Store, Product, OperationLog, LoginRecord, Announcement } from './types';
-import { THEMES, MOCK_USER, MOCK_STORES, MOCK_PRODUCTS, MOCK_LOGS, MOCK_USERS, MOCK_LOGIN_RECORDS, MOCK_ANNOUNCEMENTS, APP_LOGO_URL, PWA_ICON_URL, SIGNATURE_URL } from './constants';
+import { THEMES, APP_LOGO_URL, PWA_ICON_URL, SIGNATURE_URL } from './constants';
 import UsernameBadge from './components/UsernameBadge';
 import FaceID from './components/FaceID';
 import AnnouncementCenter from './components/AnnouncementCenter';
 import StoreManager from './components/StoreManager';
+import { supabase } from './supabase';
 
 // Lazy Load Pages
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -47,7 +48,7 @@ interface AppContextType {
   setStoreManagerOpen: (b: boolean) => void;
   setPageActions: (actions: PageActions) => void;
   isMobile: boolean;
-  // GLOBAL STATE FOR DATA PERSISTENCE
+  // GLOBAL STATE
   products: Product[];
   setProducts: React.Dispatch<React.SetStateAction<Product[]>>;
   logs: OperationLog[];
@@ -60,6 +61,7 @@ interface AppContextType {
   setStores: React.Dispatch<React.SetStateAction<Store[]>>;
   announcements: Announcement[];
   setAnnouncements: React.Dispatch<React.SetStateAction<Announcement[]>>;
+  reloadData: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -85,32 +87,23 @@ const InstallAppFloating = () => {
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
-    // Check if already installed (standalone mode)
     if (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true) {
       setIsInstalled(true);
       return;
     }
-
-    // Android/Chrome: Listen for beforeinstallprompt
     const handler = (e: any) => {
       e.preventDefault();
       setInstallPrompt(e);
       setIsVisible(true);
     };
     window.addEventListener('beforeinstallprompt', handler);
-
-    // iOS Detection
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-    if (isIOS) {
-        setIsVisible(true);
-    }
-
+    if (isIOS) setIsVisible(true);
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 
   const handleInstallClick = () => {
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-    
     if (isIOS) {
       setShowIOSModal(true);
     } else if (installPrompt) {
@@ -122,7 +115,6 @@ const InstallAppFloating = () => {
         }
       });
     } else {
-       // Fallback for PC Chrome/Edge if event hasn't fired yet or manually triggered
        alert("请点击浏览器地址栏右侧的“安装应用”图标，或在菜单中选择“添加到主屏幕”。");
     }
   };
@@ -140,7 +132,6 @@ const InstallAppFloating = () => {
       >
           <Download className="w-6 h-6" />
       </motion.button>
-
       {showIOSModal && (
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black bg-opacity-60 backdrop-blur-sm p-4" onClick={() => setShowIOSModal(false)}>
            <div className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative animate-slide-up" onClick={e => e.stopPropagation()}>
@@ -162,29 +153,17 @@ const InstallAppFloating = () => {
 };
 
 // --- Layout Components ---
-
 const Navbar = () => {
-  const { toggleSidebar, currentStore, setAnnouncementsOpen, user, isMobile, announcements } = useApp();
+  const { toggleSidebar, currentStore, setAnnouncementsOpen, user, announcements } = useApp();
   const { handleCopy, handleExcel } = useContext(AppContext) as any;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  
-  // Strict Permission Check for Excel
   const hideExcel = user?.permissions?.hideExcelExport;
-
-  // REFINED RED DOT LOGIC: Check if user ID is in read_user_ids
   const unreadCount = announcements.filter(a => {
-      // Logic for "My Announcements"
       if (a.hidden_by_users?.includes(user?.id || '')) return false;
-      if (user?.role === RoleLevel.ROOT) return false; // Root usually sees manage view, but can also get notices
-      
-      // Targeting Logic
       let isTarget = false;
-      if (!a.target_userIds || a.target_userIds.length === 0) isTarget = true; // Public
+      if (!a.target_userIds || a.target_userIds.length === 0) isTarget = true;
       else if (a.target_userIds.includes(user?.id || '')) isTarget = true;
-      
       if (!isTarget) return false;
-
-      // Read Status Logic
       return !a.read_user_ids.includes(user?.id || '');
   }).length;
 
@@ -192,7 +171,6 @@ const Navbar = () => {
     const mainContent = document.getElementById('main-content');
     const sidebar = document.getElementById('app-sidebar');
     const navbar = document.getElementById('app-navbar');
-    
     if (mainContent && sidebar && navbar) {
       const originalHeight = mainContent.style.height;
       const originalOverflow = mainContent.style.overflow;
@@ -221,29 +199,16 @@ const Navbar = () => {
             <Bell className="w-5 h-5 text-gray-600 dark:text-gray-300" />
             {unreadCount > 0 && <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}
         </motion.button>
-        {handleCopy && (
-            <motion.button whileTap={{ scale: 0.9 }} onClick={handleCopy} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700" title="复制当前页面信息">
-            <Copy className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-            </motion.button>
-        )}
-        {/* Strictly enforce Excel permission */}
-        {handleExcel && !hideExcel && (
-            <motion.button whileTap={{ scale: 0.9 }} onClick={handleExcel} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700" title="导出Excel">
-            <RefreshCw className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-            </motion.button>
-        )}
-        <motion.button whileTap={{ scale: 0.9 }} onClick={handleScreenshot} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700" title="长截图">
-            <Crop className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-        </motion.button>
+        {handleCopy && <motion.button whileTap={{ scale: 0.9 }} onClick={handleCopy} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700" title="复制"><Copy className="w-5 h-5 text-gray-600 dark:text-gray-300" /></motion.button>}
+        {handleExcel && !hideExcel && <motion.button whileTap={{ scale: 0.9 }} onClick={handleExcel} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700" title="导出"><RefreshCw className="w-5 h-5 text-gray-600 dark:text-gray-300" /></motion.button>}
+        <motion.button whileTap={{ scale: 0.9 }} onClick={handleScreenshot} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700" title="截图"><Crop className="w-5 h-5 text-gray-600 dark:text-gray-300" /></motion.button>
     </>
   );
 
   return (
     <div id="app-navbar" className="h-16 fixed top-0 left-0 right-0 z-40 glass flex items-center justify-between px-4 lg:pl-64 transition-all">
       <div className="flex items-center lg:hidden">
-        <button onClick={toggleSidebar} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
-          <Menu className="w-6 h-6 dark:text-white" />
-        </button>
+        <button onClick={toggleSidebar} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"><Menu className="w-6 h-6 dark:text-white" /></button>
       </div>
       <div className="hidden lg:flex items-center text-lg font-semibold dark:text-white">
         <img src={APP_LOGO_URL} alt="Logo" className="w-6 h-6 mr-3 rounded-md" />
@@ -252,19 +217,8 @@ const Navbar = () => {
       <div className="flex items-center space-x-2">
          <div className="hidden md:flex items-center space-x-2"><ActionButtons /></div>
          <div className="md:hidden relative">
-            <motion.button 
-                whileTap={{ scale: 0.9 }} 
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)} 
-                className="relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
-            >
-              <MoreHorizontal className="w-6 h-6 text-gray-700 dark:text-gray-300" />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-            </motion.button>
-            {mobileMenuOpen && (
-                <div className="absolute right-0 top-12 bg-white dark:bg-gray-800 shadow-xl rounded-xl p-2 flex flex-col gap-2 border dark:border-gray-700 min-w-[50px] items-center animate-fade-in">
-                    <ActionButtons />
-                </div>
-            )}
+            <motion.button whileTap={{ scale: 0.9 }} onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"><MoreHorizontal className="w-6 h-6 text-gray-700 dark:text-gray-300" /><span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span></motion.button>
+            {mobileMenuOpen && <div className="absolute right-0 top-12 bg-white dark:bg-gray-800 shadow-xl rounded-xl p-2 flex flex-col gap-2 border dark:border-gray-700 min-w-[50px] items-center animate-fade-in"><ActionButtons /></div>}
          </div>
       </div>
     </div>
@@ -275,8 +229,6 @@ const Sidebar = () => {
   const { isSidebarOpen, toggleSidebar, currentStore, setStoreManagerOpen, user, logout } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
-
-  // Strict Permission Check for Menu Items
   const menuItems = [
     { path: '/', icon: LayoutDashboard, label: '仪表盘' },
     { path: '/inventory', icon: Package, label: '库存管理' },
@@ -285,11 +237,7 @@ const Sidebar = () => {
     { path: '/audit', icon: ShieldCheck, label: '审计大厅', hidden: user?.permissions?.hideAuditHall },
     { path: '/settings', icon: Settings, label: '系统设置', hidden: user?.permissions?.hideSettings },
   ];
-
-  const sidebarClass = `
-    fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-900 border-r dark:border-gray-700 transform transition-transform duration-300 ease-in-out
-    ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-  `;
+  const sidebarClass = `fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-900 border-r dark:border-gray-700 transform transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`;
 
   return (
     <>
@@ -301,36 +249,17 @@ const Sidebar = () => {
            <button onClick={toggleSidebar} className="ml-auto lg:hidden"><X className="w-5 h-5" /></button>
         </div>
         <div className="p-4">
-          <button 
-            onClick={() => setStoreManagerOpen(true)}
-            // Strict Permission Check for Store Edit Button
-            disabled={user?.permissions?.hideStoreEdit}
-            className={`w-full py-2 px-4 mb-4 bg-gray-100 dark:bg-gray-800 rounded-xl flex items-center justify-between transition-colors ${user?.permissions?.hideStoreEdit ? 'opacity-50 cursor-not-allowed hidden' : 'hover:bg-gray-200 dark:hover:bg-gray-700'}`}
-          >
+          <button onClick={() => setStoreManagerOpen(true)} disabled={user?.permissions?.hideStoreEdit} className={`w-full py-2 px-4 mb-4 bg-gray-100 dark:bg-gray-800 rounded-xl flex items-center justify-between transition-colors ${user?.permissions?.hideStoreEdit ? 'opacity-50 cursor-not-allowed hidden' : 'hover:bg-gray-200 dark:hover:bg-gray-700'}`}>
             <span className="font-medium dark:text-gray-200 truncate pr-2">当前: {currentStore.name}</span>
             <RefreshCw className="w-4 h-4 text-gray-500 flex-shrink-0" />
           </button>
-          {user?.permissions?.hideStoreEdit && (
-             <div className="w-full py-2 px-4 mb-4 bg-gray-50 dark:bg-gray-900 rounded-xl flex items-center justify-between border dark:border-gray-700">
-                <span className="font-medium dark:text-gray-400 truncate text-sm">{currentStore.name}</span>
-             </div>
-          )}
-
+          {user?.permissions?.hideStoreEdit && <div className="w-full py-2 px-4 mb-4 bg-gray-50 dark:bg-gray-900 rounded-xl flex items-center justify-between border dark:border-gray-700"><span className="font-medium dark:text-gray-400 truncate text-sm">{currentStore.name}</span></div>}
           <nav className="space-y-1">
             {menuItems.filter(i => !i.hidden).map((item) => {
               const isActive = location.pathname === item.path;
               return (
-                <button
-                  key={item.path}
-                  onClick={() => { navigate(item.path); if(window.innerWidth < 1024) toggleSidebar(); }}
-                  className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${
-                    isActive 
-                      ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 font-medium shadow-sm' 
-                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
-                  }`}
-                >
-                  <item.icon className="w-5 h-5" />
-                  <span>{item.label}</span>
+                <button key={item.path} onClick={() => { navigate(item.path); if(window.innerWidth < 1024) toggleSidebar(); }} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${isActive ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 font-medium shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
+                  <item.icon className="w-5 h-5" /><span>{item.label}</span>
                 </button>
               );
             })}
@@ -338,13 +267,8 @@ const Sidebar = () => {
         </div>
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
            <div className="flex items-center space-x-3 cursor-pointer p-2 rounded-xl hover:bg-white dark:hover:bg-gray-800 transition-colors" onClick={() => navigate('/settings')}>
-              <div className="w-10 h-10 rounded-full bg-indigo-500 flex items-center justify-center text-white font-bold">
-                 {user?.username[0]}
-              </div>
-              <div className="flex-1 overflow-hidden">
-                 <UsernameBadge name={user?.username || ''} roleLevel={user?.role || RoleLevel.GUEST} className="text-sm block truncate" />
-                 <span className="text-xs text-gray-500">点击设置</span>
-              </div>
+              <div className="w-10 h-10 rounded-full bg-indigo-500 flex items-center justify-center text-white font-bold">{user?.username[0]}</div>
+              <div className="flex-1 overflow-hidden"><UsernameBadge name={user?.username || ''} roleLevel={user?.role || RoleLevel.GUEST} className="text-sm block truncate" /><span className="text-xs text-gray-500">点击设置</span></div>
               <LogOut className="w-5 h-5 text-gray-400 hover:text-red-500" onClick={(e) => { e.stopPropagation(); logout(); }} />
            </div>
         </div>
@@ -353,19 +277,15 @@ const Sidebar = () => {
   );
 };
 
-// --- In-Place View Containers ---
 const ModalContainer = ({ children, isOpen }: React.PropsWithChildren<{ isOpen: boolean }>) => {
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-[100] bg-black bg-opacity-50 flex items-center justify-center p-4 backdrop-blur-sm">
-       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white dark:bg-gray-800 w-full max-w-4xl h-[80vh] rounded-2xl shadow-2xl overflow-hidden">
-         {children}
-       </motion.div>
+       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white dark:bg-gray-800 w-full max-w-4xl h-[80vh] rounded-2xl shadow-2xl overflow-hidden">{children}</motion.div>
     </div>
   );
 }
 
-// --- Authentication (Real Login Logic) ---
 const Login = () => {
   const { login, users } = useApp();
   const [inputName, setInputName] = useState('');
@@ -374,46 +294,22 @@ const Login = () => {
   const [targetFaceData, setTargetFaceData] = useState<string | undefined>(undefined);
   
   const handleLogin = () => {
-    // 1. Strict Username Check
     const userExists = users.find(u => u.username === inputName);
-    
-    if (!userExists) {
-        alert("用户名错误");
-        return;
-    }
-
-    // 2. Strict Password Check
-    if (userExists.password !== inputPass) {
-        alert("密码错误");
-        return;
-    }
-
+    if (!userExists) { alert("用户名错误"); return; }
+    if (userExists.password !== inputPass) { alert("密码错误"); return; }
     login(userExists);
   };
 
   const handleFaceIDClick = () => {
       let targetUser = users.find(u => u.username === inputName);
-      if (!targetUser && !inputName) {
-          // Default to first admin for demo convenience if input empty
-          targetUser = users.find(u => u.role === RoleLevel.ROOT);
-      }
-
-      if (targetUser) {
-          setTargetFaceData(targetUser.avatar); 
-          setUseFaceID(true);
-      } else {
-          alert("请输入用户名以便匹配人脸数据，或使用密码登录。");
-      }
+      if (!targetUser && !inputName) targetUser = users.find(u => u.role === RoleLevel.ROOT);
+      if (targetUser) { setTargetFaceData(targetUser.avatar); setUseFaceID(true); } else { alert("请输入用户名以便匹配人脸数据，或使用密码登录。"); }
   };
 
   const handleFaceSuccess = () => {
       let targetUser = users.find(u => u.username === inputName);
       if (!targetUser && !inputName) targetUser = users.find(u => u.role === RoleLevel.ROOT);
-
-      if (targetUser) {
-          login(targetUser);
-          setUseFaceID(false);
-      }
+      if (targetUser) { login(targetUser); setUseFaceID(false); }
   };
 
   return (
@@ -426,20 +322,8 @@ const Login = () => {
            <p className="text-gray-500 mt-2">智能库管系统</p>
         </div>
         <div className="space-y-4">
-          <input 
-            type="text" 
-            value={inputName}
-            onChange={e => setInputName(e.target.value)}
-            className="w-full px-4 py-3 rounded-xl border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 outline-none" 
-            placeholder="用户名 (如: 管理员)" 
-          />
-          <input 
-            type="password" 
-            value={inputPass}
-            onChange={e => setInputPass(e.target.value)}
-            className="w-full px-4 py-3 rounded-xl border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 outline-none" 
-            placeholder="密码" 
-          />
+          <input type="text" value={inputName} onChange={e => setInputName(e.target.value)} className="w-full px-4 py-3 rounded-xl border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="用户名 (如: 管理员)" />
+          <input type="password" value={inputPass} onChange={e => setInputPass(e.target.value)} className="w-full px-4 py-3 rounded-xl border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="密码" />
           <motion.button whileTap={{ scale: 0.98 }} onClick={handleLogin} className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-600/30">登录</motion.button>
           <motion.button whileTap={{ scale: 0.98 }} onClick={handleFaceIDClick} className="w-full py-3 border-2 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 rounded-xl font-bold hover:bg-gray-50 flex items-center justify-center gap-2"><UserCircle className="w-5 h-5" /> 人脸识别登录</motion.button>
         </div>
@@ -448,7 +332,6 @@ const Login = () => {
   );
 };
 
-// --- Main Layout & Splash ---
 const SplashScreen = ({ onFinish }: { onFinish: () => void }) => {
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -510,112 +393,92 @@ const MainLayout = () => {
 const AppContent = () => {
   const [theme, setThemeState] = useState<ThemeMode>('light');
   const [user, setUser] = useState<User | null>(null);
-  const [currentStore, setCurrentStore] = useState<Store>(MOCK_STORES[0]);
+  const [currentStore, setCurrentStore] = useState<Store>({ id: 'dummy', name: '加载中...', isParent: false });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [announcementsOpen, setAnnouncementsOpen] = useState(false);
   const [storeManagerOpen, setStoreManagerOpen] = useState(false);
   const [appReady, setAppReady] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  
   const [pageActions, setPageActions] = useState<PageActions>({});
 
   // Real-time State
-  const [products, setProductsRaw] = useState<Product[]>(MOCK_PRODUCTS);
-  const [logs, setLogsRaw] = useState<OperationLog[]>(MOCK_LOGS);
-  const [users, setUsersRaw] = useState<User[]>(MOCK_USERS);
-  const [loginRecords, setLoginRecordsRaw] = useState<LoginRecord[]>(MOCK_LOGIN_RECORDS);
-  const [stores, setStoresRaw] = useState<Store[]>(MOCK_STORES); 
-  const [announcements, setAnnouncementsRaw] = useState<Announcement[]>(MOCK_ANNOUNCEMENTS);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [logs, setLogs] = useState<OperationLog[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loginRecords, setLoginRecords] = useState<LoginRecord[]>([]);
+  const [stores, setStores] = useState<Store[]>([]); 
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
 
-  const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
-
-  // Initialize BroadcastChannel
-  useEffect(() => {
-    broadcastChannelRef.current = new BroadcastChannel('stockwise_sync');
-    broadcastChannelRef.current.onmessage = (event) => {
-        const { type, payload } = event.data;
-        // console.log("Received broadcast:", type, payload); // Debugging
-        switch(type) {
-            case 'PRODUCTS': setProductsRaw(payload); break;
-            case 'LOGS': setLogsRaw(payload); break;
-            case 'USERS': setUsersRaw(payload); break;
-            case 'STORES': setStoresRaw(payload); break;
-            case 'ANNOUNCEMENTS': setAnnouncementsRaw(payload); break;
-            case 'LOGIN_RECORDS': setLoginRecordsRaw(payload); break;
+  // FETCH DATA FUNCTION
+  const reloadData = async () => {
+    // 1. Fetch Stores
+    const { data: sData } = await supabase.from('stores').select('*');
+    if (sData) {
+        const mappedStores = sData.map((s: any) => ({
+            id: s.id, name: s.name, isParent: s.is_parent, childrenIds: s.children_ids,
+            parentId: s.parent_id, managerIds: s.manager_ids, viewerIds: s.viewer_ids
+        }));
+        setStores(mappedStores);
+        if (currentStore.id === 'dummy' && mappedStores.length > 0) {
+            setCurrentStore(mappedStores[0]);
         }
-    };
-    return () => {
-        broadcastChannelRef.current?.close();
-    };
+    }
+
+    // 2. Fetch Users
+    const { data: uData } = await supabase.from('users').select('*');
+    if (uData) setUsers(uData);
+
+    // 3. Fetch Products & Batches
+    const { data: pData } = await supabase.from('products').select('*, batches(*)');
+    if (pData) {
+        const mappedProducts: Product[] = pData.map((p: any) => ({
+            id: p.id,
+            storeId: p.store_id,
+            name: p.name,
+            category: p.category,
+            sku: p.sku,
+            image_url: p.image_url,
+            notes: p.notes,
+            keywords: p.keywords,
+            batches: (p.batches || []).map((b: any) => ({
+                id: b.id,
+                batchNumber: b.batch_number,
+                expiryDate: b.expiry_date,
+                quantityBig: b.quantity_big,
+                quantitySmall: b.quantity_small,
+                unitBig: b.unit_big,
+                unitSmall: b.unit_small,
+                conversionRate: b.conversion_rate,
+                price: b.price,
+                notes: b.notes
+            }))
+        }));
+        setProducts(mappedProducts);
+    }
+
+    // 4. Fetch Logs
+    const { data: lData } = await supabase.from('operation_logs').select('*').order('created_at', { ascending: false });
+    if (lData) setLogs(lData);
+
+    // 5. Fetch Announcements
+    const { data: aData } = await supabase.from('announcements').select('*').order('created_at', { ascending: false });
+    if (aData) setAnnouncements(aData);
+
+    // 6. Fetch Login Records
+    const { data: lrData } = await supabase.from('login_records').select('*').order('login_at', { ascending: false });
+    if (lrData) setLoginRecords(lrData);
+  };
+
+  useEffect(() => {
+      reloadData();
   }, []);
 
-  // Broadcasting Setters (Wrappers)
-  const broadcast = (type: string, payload: any) => {
-      broadcastChannelRef.current?.postMessage({ type, payload });
-  };
-
-  const setProducts: React.Dispatch<React.SetStateAction<Product[]>> = (value) => {
-      setProductsRaw(prev => {
-          const next = typeof value === 'function' ? (value as any)(prev) : value;
-          broadcast('PRODUCTS', next);
-          return next;
-      });
-  };
-
-  const setLogs: React.Dispatch<React.SetStateAction<OperationLog[]>> = (value) => {
-      setLogsRaw(prev => {
-          const next = typeof value === 'function' ? (value as any)(prev) : value;
-          broadcast('LOGS', next);
-          return next;
-      });
-  };
-
-  const setUsers: React.Dispatch<React.SetStateAction<User[]>> = (value) => {
-      setUsersRaw(prev => {
-          const next = typeof value === 'function' ? (value as any)(prev) : value;
-          broadcast('USERS', next);
-          return next;
-      });
-  };
-
-  const setStores: React.Dispatch<React.SetStateAction<Store[]>> = (value) => {
-      setStoresRaw(prev => {
-          const next = typeof value === 'function' ? (value as any)(prev) : value;
-          broadcast('STORES', next);
-          return next;
-      });
-  };
-
-  const setAnnouncements: React.Dispatch<React.SetStateAction<Announcement[]>> = (value) => {
-      setAnnouncementsRaw(prev => {
-          const next = typeof value === 'function' ? (value as any)(prev) : value;
-          broadcast('ANNOUNCEMENTS', next);
-          return next;
-      });
-  };
-
-  const setLoginRecords: React.Dispatch<React.SetStateAction<LoginRecord[]>> = (value) => {
-      setLoginRecordsRaw(prev => {
-          const next = typeof value === 'function' ? (value as any)(prev) : value;
-          broadcast('LOGIN_RECORDS', next);
-          return next;
-      });
-  };
-
+  // Other effects...
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
-
-  useEffect(() => {
-    if (appReady && (window as any).requestIdleCallback) {
-      (window as any).requestIdleCallback(() => {
-        import('./pages/Inventory');
-        import('./pages/OperationLogs');
-      });
-    }
-  }, [appReady]);
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -626,75 +489,30 @@ const AppContent = () => {
     else { root.style.backgroundColor = '#ffffff'; }
   }, [theme]);
 
-  // STRICT POPUP LOGIC IMPLEMENTATION
+  // Popup logic...
   useEffect(() => {
     if (user && appReady) {
-        // 1. Check SessionStorage Priority (Highest)
-        // If marker exists in session storage, we have ALREADY handled popups for this session.
-        // Return immediately.
-        // Note: The requirement says "Logout clears sessionStorage", so if it's there, it means same session.
         const sessionKey = `hasCheckedPopups_${user.id}`;
-        if (sessionStorage.getItem(sessionKey)) {
-            return;
-        }
-
-        // 2. Identify Potential Popups
+        if (sessionStorage.getItem(sessionKey)) return;
         const potentialPopups = announcements.filter(a => 
             a.popup_config?.enabled && 
             (!a.target_userIds || a.target_userIds.length === 0 || a.target_userIds.includes(user.id)) &&
             (!a.target_roles || a.target_roles.length === 0 || a.target_roles.includes(user.role))
         );
-
         let shouldShowPopup = false;
-
         potentialPopups.forEach(p => {
             const freq = p.popup_config?.frequency || 'once';
             const localKey = `popup_last_viewed_${p.id}_${user.id}`;
             const lastViewed = localStorage.getItem(localKey);
             const now = new Date();
-
             let showThis = false;
-
-            if (freq === 'permanent') {
-                // Always show every new session
-                showThis = true;
-            } else if (freq === 'once') {
-                // Show if never viewed
-                if (!lastViewed) showThis = true;
-            } else if (freq === 'daily') {
-                // Show if last viewed was not today
-                if (!lastViewed) showThis = true;
-                else {
-                    const lastDate = new Date(lastViewed);
-                    if (lastDate.toDateString() !== now.toDateString()) showThis = true;
-                }
-            } else if (freq === 'monthly') {
-                // Show if last viewed was not this month
-                if (!lastViewed) showThis = true;
-                else {
-                    const lastDate = new Date(lastViewed);
-                    if (lastDate.getMonth() !== now.getMonth() || lastDate.getFullYear() !== now.getFullYear()) showThis = true;
-                }
-            }
-
-            if (showThis) {
-                shouldShowPopup = true;
-                // Mark this popup as processed for frequency logic (Persistent)
-                localStorage.setItem(localKey, now.toISOString());
-            }
+            if (freq === 'permanent') showThis = true;
+            else if (freq === 'once') { if (!lastViewed) showThis = true; } 
+            else if (freq === 'daily') { if (!lastViewed || new Date(lastViewed).toDateString() !== now.toDateString()) showThis = true; }
+            else if (freq === 'monthly') { if (!lastViewed || new Date(lastViewed).getMonth() !== now.getMonth()) showThis = true; }
+            if (showThis) { shouldShowPopup = true; localStorage.setItem(localKey, now.toISOString()); }
         });
-
-        // 3. Trigger and Mark Session
-        if (shouldShowPopup) {
-            setAnnouncementsOpen(true);
-        }
-        
-        // Mark session as "checked" so we don't re-run frequency logic on simple refresh if strict session rules apply
-        // However, standard browser refresh keeps sessionStorage.
-        // The requirement says "Next time user logs in...". Logout clears session.
-        // So simple refresh should NOT show again?
-        // "Check sessionStorage first... if exists return".
-        // So yes, mark it now.
+        if (shouldShowPopup) setAnnouncementsOpen(true);
         sessionStorage.setItem(sessionKey, 'true');
     }
   }, [user, appReady, announcements]);
@@ -702,26 +520,20 @@ const AppContent = () => {
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
   
   const login = (u: User) => {
-      // Always pull latest data from global users state to ensure permissions are up to date
       const freshUser = users.find(existing => existing.id === u.id) || u;
       setUser(freshUser);
-
-      const newRecord: LoginRecord = {
+      // Log login to DB
+      supabase.from('login_records').insert({
           id: `login_${Date.now()}`,
           user_id: freshUser.id,
           user_name: freshUser.username,
           device_name: navigator.userAgent.includes('Mobile') ? 'Mobile Device' : 'Desktop PC',
           ip_address: '192.168.1.x',
           login_at: new Date().toISOString()
-      };
-      setLoginRecords(prev => [newRecord, ...prev]);
+      }).then(() => reloadData());
   };
   
-  const logout = () => { 
-      setUser(null); 
-      sessionStorage.clear(); // Clear session storage on logout as per requirements
-  };
-  
+  const logout = () => { setUser(null); sessionStorage.clear(); };
   const setTheme = (t: ThemeMode) => setThemeState(t);
 
   return (
@@ -740,7 +552,8 @@ const AppContent = () => {
       users, setUsers,
       loginRecords, setLoginRecords,
       stores, setStores,
-      announcements, setAnnouncements
+      announcements, setAnnouncements,
+      reloadData
     }}>
       {!appReady && <SplashScreen onFinish={() => setAppReady(true)} />}
       {appReady && <Router><MainLayout /></Router>}
