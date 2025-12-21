@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, createContext, useContext, Suspense, lazy, useRef } from 'react';
 import { HashRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { 
@@ -10,7 +11,7 @@ import html2canvas from 'html2canvas';
 import * as XLSX from 'xlsx';
 
 import { ThemeMode, RoleLevel, User, Store, Product, OperationLog, LoginRecord, Announcement } from './types';
-import { THEMES, MOCK_USER, MOCK_STORES, MOCK_PRODUCTS, MOCK_LOGS, MOCK_USERS, MOCK_LOGIN_RECORDS, MOCK_ANNOUNCEMENTS } from './constants';
+import { THEMES, MOCK_USER, MOCK_STORES, MOCK_PRODUCTS, MOCK_LOGS, MOCK_USERS, MOCK_LOGIN_RECORDS, MOCK_ANNOUNCEMENTS, APP_LOGO_URL, PWA_ICON_URL, SIGNATURE_URL } from './constants';
 import UsernameBadge from './components/UsernameBadge';
 import FaceID from './components/FaceID';
 import AnnouncementCenter from './components/AnnouncementCenter';
@@ -23,11 +24,6 @@ const OperationLogs = lazy(() => import('./pages/OperationLogs'));
 const ImportProducts = lazy(() => import('./pages/ImportProducts'));
 const AuditHall = lazy(() => import('./pages/AuditHall'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
-
-// Constants for Images
-const APP_LOGO_URL = "https://i.ibb.co/vxq7QfYd/retouch-2025121423241826.png";
-const PWA_ICON_URL = "https://i.ibb.co/TBxHgV10/IMG-20251214-191059.png";
-const SIGNATURE_URL = "https://i.ibb.co/8gLfYKCW/retouch-2025121313394035.png";
 
 // --- Global Context ---
 interface PageActions {
@@ -86,11 +82,11 @@ const InstallAppFloating = () => {
   const [installPrompt, setInstallPrompt] = useState<any>(null);
   const [showIOSModal, setShowIOSModal] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
-  const [isVisible, setIsVisible] = useState(false); // Initially hidden for Android/Chrome logic
+  const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
-    // Check if already installed
-    if (window.matchMedia('(display-mode: standalone)').matches) {
+    // Check if already installed (standalone mode)
+    if (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true) {
       setIsInstalled(true);
       return;
     }
@@ -99,19 +95,13 @@ const InstallAppFloating = () => {
     const handler = (e: any) => {
       e.preventDefault();
       setInstallPrompt(e);
-      setIsVisible(true); // Show button only when event fires
+      setIsVisible(true);
     };
     window.addEventListener('beforeinstallprompt', handler);
 
     // iOS Detection
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
     if (isIOS) {
-        setIsVisible(true); // Always show for iOS if not installed
-    }
-
-    // PC/Other: Default behavior (if we want to show it always on PC, we can set true, but adhering to "Smart Logic")
-    // If not mobile and not installed, show it for manual install trigger if available
-    if (!isIOS && !/Android/.test(navigator.userAgent)) {
         setIsVisible(true);
     }
 
@@ -132,8 +122,8 @@ const InstallAppFloating = () => {
         }
       });
     } else {
-       // PC Fallback or if prompt not ready
-       alert("请点击浏览器地址栏右侧的安装图标，或在菜单中选择“安装应用”");
+       // Fallback for PC Chrome/Edge if event hasn't fired yet or manually triggered
+       alert("请点击浏览器地址栏右侧的“安装应用”图标，或在菜单中选择“添加到主屏幕”。");
     }
   };
 
@@ -181,13 +171,21 @@ const Navbar = () => {
   // Strict Permission Check for Excel
   const hideExcel = user?.permissions?.hideExcelExport;
 
+  // REFINED RED DOT LOGIC: Check if user ID is in read_user_ids
   const unreadCount = announcements.filter(a => {
       // Logic for "My Announcements"
       if (a.hidden_by_users?.includes(user?.id || '')) return false;
-      if (user?.role === RoleLevel.ROOT) return false; // Root usually sees manage view
-      if (!a.target_userIds || a.target_userIds.length === 0) return !a.is_read;
-      if (a.target_userIds.includes(user?.id || '')) return !a.is_read;
-      return false;
+      if (user?.role === RoleLevel.ROOT) return false; // Root usually sees manage view, but can also get notices
+      
+      // Targeting Logic
+      let isTarget = false;
+      if (!a.target_userIds || a.target_userIds.length === 0) isTarget = true; // Public
+      else if (a.target_userIds.includes(user?.id || '')) isTarget = true;
+      
+      if (!isTarget) return false;
+
+      // Read Status Logic
+      return !a.read_user_ids.includes(user?.id || '');
   }).length;
 
   const handleScreenshot = () => {
@@ -628,31 +626,76 @@ const AppContent = () => {
     else { root.style.backgroundColor = '#ffffff'; }
   }, [theme]);
 
+  // STRICT POPUP LOGIC IMPLEMENTATION
   useEffect(() => {
     if (user && appReady) {
-        // Strict Popup Logic per PDF
-        // Check for announcements that have popup enabled and haven't been viewed in this session
-        const popups = announcements.filter(a => 
+        // 1. Check SessionStorage Priority (Highest)
+        // If marker exists in session storage, we have ALREADY handled popups for this session.
+        // Return immediately.
+        // Note: The requirement says "Logout clears sessionStorage", so if it's there, it means same session.
+        const sessionKey = `hasCheckedPopups_${user.id}`;
+        if (sessionStorage.getItem(sessionKey)) {
+            return;
+        }
+
+        // 2. Identify Potential Popups
+        const potentialPopups = announcements.filter(a => 
             a.popup_config?.enabled && 
-            (!a.target_userIds || a.target_userIds.includes(user.id)) &&
+            (!a.target_userIds || a.target_userIds.length === 0 || a.target_userIds.includes(user.id)) &&
             (!a.target_roles || a.target_roles.length === 0 || a.target_roles.includes(user.role))
         );
 
-        let showPopup = false;
-        for (const p of popups) {
-            // Check sessionStorage
-            const key = `hasViewedPopup_${p.id}_${user.id}`;
-            const hasViewed = sessionStorage.getItem(key);
-            if (!hasViewed) {
-                showPopup = true;
-                sessionStorage.setItem(key, 'true');
-                break; // Trigger open, the Announcement Center will handle showing the list
-            }
-        }
+        let shouldShowPopup = false;
 
-        if (showPopup) {
+        potentialPopups.forEach(p => {
+            const freq = p.popup_config?.frequency || 'once';
+            const localKey = `popup_last_viewed_${p.id}_${user.id}`;
+            const lastViewed = localStorage.getItem(localKey);
+            const now = new Date();
+
+            let showThis = false;
+
+            if (freq === 'permanent') {
+                // Always show every new session
+                showThis = true;
+            } else if (freq === 'once') {
+                // Show if never viewed
+                if (!lastViewed) showThis = true;
+            } else if (freq === 'daily') {
+                // Show if last viewed was not today
+                if (!lastViewed) showThis = true;
+                else {
+                    const lastDate = new Date(lastViewed);
+                    if (lastDate.toDateString() !== now.toDateString()) showThis = true;
+                }
+            } else if (freq === 'monthly') {
+                // Show if last viewed was not this month
+                if (!lastViewed) showThis = true;
+                else {
+                    const lastDate = new Date(lastViewed);
+                    if (lastDate.getMonth() !== now.getMonth() || lastDate.getFullYear() !== now.getFullYear()) showThis = true;
+                }
+            }
+
+            if (showThis) {
+                shouldShowPopup = true;
+                // Mark this popup as processed for frequency logic (Persistent)
+                localStorage.setItem(localKey, now.toISOString());
+            }
+        });
+
+        // 3. Trigger and Mark Session
+        if (shouldShowPopup) {
             setAnnouncementsOpen(true);
         }
+        
+        // Mark session as "checked" so we don't re-run frequency logic on simple refresh if strict session rules apply
+        // However, standard browser refresh keeps sessionStorage.
+        // The requirement says "Next time user logs in...". Logout clears session.
+        // So simple refresh should NOT show again?
+        // "Check sessionStorage first... if exists return".
+        // So yes, mark it now.
+        sessionStorage.setItem(sessionKey, 'true');
     }
   }, [user, appReady, announcements]);
 

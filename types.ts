@@ -1,3 +1,4 @@
+
 export type ThemeMode = 'light' | 'dark' | 'prism-light' | 'prism-dark';
 
 export enum RoleLevel {
@@ -110,7 +111,7 @@ export interface Announcement {
   created_at: string;
   target_roles: RoleLevel[];
   target_userIds?: string[];
-  is_read: boolean;
+  read_user_ids: string[]; // Changed from is_read boolean to array of user IDs
   type: 'notice' | 'suggestion';
   popup_config?: {
     enabled: boolean;

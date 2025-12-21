@@ -151,14 +151,22 @@ const Dashboard = () => {
   const [activeModal, setActiveModal] = useState<'low' | 'expiry' | null>(null);
   const [dateRange, setDateRange] = useState<'7' | '30' | '90'>('7');
 
-  // Calculate stats from GLOBAL products
-  const totalStock = products.reduce((acc, p) => acc + p.batches.reduce((bAcc, b) => bAcc + b.quantityBig * b.conversionRate + b.quantitySmall, 0), 0);
+  // --- DATA ISOLATION LOGIC ---
+  const isolatedProducts = useMemo(() => {
+      return products.filter(p => {
+          if (currentStore.isParent) return currentStore.childrenIds?.includes(p.storeId);
+          else return p.storeId === currentStore.id;
+      });
+  }, [products, currentStore]);
+
+  // Calculate stats from ISOLATED products
+  const totalStock = isolatedProducts.reduce((acc, p) => acc + p.batches.reduce((bAcc, b) => bAcc + b.quantityBig * b.conversionRate + b.quantitySmall, 0), 0);
   
-  const lowStockItems = products.flatMap(p => 
+  const lowStockItems = isolatedProducts.flatMap(p => 
     p.batches.filter(b => b.quantityBig < thresholds.low).map(b => ({ name: p.name, detail: `批号: ${b.batchNumber}`, value: `${b.quantityBig}盒` }))
   );
 
-  const expiryItems = products.flatMap(p => 
+  const expiryItems = isolatedProducts.flatMap(p => 
     p.batches.map(b => {
        const days = Math.floor((new Date(b.expiryDate).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
        return days < thresholds.expiry ? { name: p.name, detail: `有效期: ${b.expiryDate}`, value: `${days}天` } : null;
@@ -166,7 +174,7 @@ const Dashboard = () => {
   );
 
   // Dynamic Chart Data based on current categories
-  const categoryCounts = products.reduce((acc, p) => {
+  const categoryCounts = isolatedProducts.reduce((acc, p) => {
       acc[p.category] = (acc[p.category] || 0) + p.batches.reduce((sum, b) => sum + b.quantityBig, 0);
       return acc;
   }, {} as Record<string, number>);

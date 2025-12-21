@@ -1,3 +1,4 @@
+
 import { RoleLevel, ThemeMode, Product, OperationLog, LogAction, Store, User, LoginRecord, Announcement } from './types';
 
 export const THEMES: { mode: ThemeMode; name: string; bg: string; text: string }[] = [
@@ -101,8 +102,8 @@ export const MOCK_LOGS: OperationLog[] = [
 ];
 
 export const MOCK_ANNOUNCEMENTS: Announcement[] = [
-    { id: 'a1', title: '系统维护通知', content: '系统将于今晚进行维护。', author_id: 'u_001', author_name: '管理员', author_role: RoleLevel.ROOT, created_at: new Date().toISOString(), target_roles: [], is_read: false, type: 'notice' },
-    { id: 'a2', title: '盘点提醒', content: '请各门店本周五前完成盘点。', author_id: 'u_001', author_name: '管理员', author_role: RoleLevel.ROOT, created_at: new Date().toISOString(), target_roles: [], target_userIds: ['u_002', 'u_003'], is_read: true, type: 'notice' },
+    { id: 'a1', title: '系统维护通知', content: '系统将于今晚进行维护。', author_id: 'u_001', author_name: '管理员', author_role: RoleLevel.ROOT, created_at: new Date().toISOString(), target_roles: [], read_user_ids: [], type: 'notice' },
+    { id: 'a2', title: '盘点提醒', content: '请各门店本周五前完成盘点。', author_id: 'u_001', author_name: '管理员', author_role: RoleLevel.ROOT, created_at: new Date().toISOString(), target_roles: [], target_userIds: ['u_002', 'u_003'], read_user_ids: ['u_001'], type: 'notice' },
 ];
 
 export const MOCK_LOGIN_RECORDS: LoginRecord[] = [];
@@ -110,3 +111,8 @@ export const MOCK_LOGIN_RECORDS: LoginRecord[] = [];
 export const formatDate = (dateStr: string) => {
   return new Date(dateStr).toLocaleString('zh-CN', { hour12: false });
 };
+
+// Image Constants
+export const APP_LOGO_URL = "https://i.ibb.co/vxq7QfYd/retouch-2025121423241826.png";
+export const PWA_ICON_URL = "https://i.ibb.co/TBxHgV10/IMG-20251214-191059.png";
+export const SIGNATURE_URL = "https://i.ibb.co/8gLfYKCW/retouch-2025121313394035.png";

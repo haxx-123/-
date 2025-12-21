@@ -6,7 +6,6 @@ import { useApp } from '../App';
 import UsernameBadge from '../components/UsernameBadge';
 import CameraModal from '../components/CameraModal';
 import * as XLSX from 'xlsx';
-import { SUPABASE_URL } from '../supabase';
 
 const SettingsPage = () => {
   const { theme, setTheme, user, login, logout, setPageActions, users, setUsers } = useApp();
@@ -106,6 +105,16 @@ const SettingsPage = () => {
 
   const savePermissionUser = () => {
     if (editingUser) {
+      // Logic constraint: Cannot save if editing existing peer user (unless self or root)
+      const isPeer = user?.role === editingUser.role && user?.id !== editingUser.id;
+      const isNew = !users.some(u => u.id === editingUser.id);
+      const isRoot = user?.role === RoleLevel.ROOT;
+
+      if (isPeer && !isNew && !isRoot) {
+          alert("权限不足：同级用户不可修改，仅可查看。");
+          return;
+      }
+
       if (!window.confirm("是否确定保存，立刻生效？")) {
           return;
       }
@@ -170,6 +179,129 @@ const SettingsPage = () => {
         ...editingUser,
         permissions: { ...permissions, [key]: value }
     });
+  };
+
+  const UserEditModal = () => {
+    if (!isEditModalOpen || !editingUser) return null;
+    
+    // Check if creating new user or editing existing
+    const isNewUser = !users.some(u => u.id === editingUser.id);
+    const isSelf = user?.id === editingUser.id;
+    const isRoot = user?.role === RoleLevel.ROOT;
+    const isPeer = user?.role === editingUser.role;
+    
+    // Permission Logic for UI
+    const canModify = isRoot || isSelf || isNewUser || (!isPeer && user && user.role < editingUser.role);
+    const canSeePassword = isRoot || isSelf || isNewUser; // Peer cannot see password of existing user
+
+    return (
+      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm animate-fade-in">
+         <div className="bg-white dark:bg-gray-800 w-full max-w-3xl rounded-2xl shadow-2xl p-6 relative max-h-[90vh] overflow-y-auto">
+            <button onClick={() => setIsEditModalOpen(false)} className="absolute top-4 right-4 text-gray-500"><X className="w-5 h-5"/></button>
+            <h3 className="text-xl font-bold mb-6 dark:text-white">
+                {isNewUser ? '新建用户' : '编辑用户'}
+                {!canModify && <span className="ml-3 text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded border border-yellow-200">仅查看模式</span>}
+            </h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-5">
+                    <h4 className="font-bold text-gray-700 dark:text-gray-300 border-b pb-2 flex items-center gap-2"><UserIcon className="w-4 h-4"/> 基础信息</h4>
+                    <div><label className="block text-sm font-medium mb-1 text-gray-500">用户 ID (不可修改)</label><div className="p-2 bg-gray-100 dark:bg-gray-700 rounded text-gray-500 font-mono text-xs break-all">{editingUser.id}</div></div>
+                    <div>
+                        <label className="block text-sm font-medium mb-1">用户名</label>
+                        <input 
+                            type="text" 
+                            value={editingUser.username} 
+                            onChange={e => setEditingUser({...editingUser, username: e.target.value})} 
+                            className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 outline-none focus:border-blue-500 disabled:opacity-50 disabled:bg-gray-100"
+                            disabled={!canModify}
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium mb-1">登录密码 (管理员可重置)</label>
+                        <input 
+                            type="text" 
+                            value={canSeePassword ? (editingUser.password || '') : '******'} 
+                            onChange={e => setEditingUser({...editingUser, password: e.target.value})} 
+                            placeholder="设置密码" 
+                            className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 outline-none focus:border-blue-500 font-mono disabled:opacity-50 disabled:bg-gray-100"
+                            disabled={!canModify} // Peer cannot modify password
+                        />
+                        {!canSeePassword && <p className="text-xs text-gray-400 mt-1">* 密码已隐藏</p>}
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium mb-1">角色等级 (00-09)</label>
+                        <select 
+                            value={editingUser.role} 
+                            onChange={e => setEditingUser({...editingUser, role: e.target.value as RoleLevel})} 
+                            className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 outline-none focus:border-blue-500 disabled:opacity-50"
+                            disabled={!canModify}
+                        >
+                            {Object.values(RoleLevel).map(r => {
+                                // Logic: ROOT sees all. Others see roles lower than themselves OR equal if allowPeerLevel is on.
+                                const canSelect = isRoot || (user && r > user.role) || (user?.permissions?.allowPeerLevel && r === user.role);
+                                return canSelect && (<option key={r} value={r}>{r}</option>);
+                            })}
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">{getPermissionDesc(editingUser.role)}</p>
+                    </div>
+                </div>
+
+                <div className="space-y-6">
+                    <h4 className="font-bold text-gray-700 dark:text-gray-300 border-b pb-2 flex items-center gap-2"><Shield className="w-4 h-4"/> 权限矩阵配置 (独立控制)</h4>
+                    <p className="text-xs text-gray-400">以下开关独立于角色等级，严格控制功能入口。</p>
+                    <div className="bg-gray-50 dark:bg-gray-700/30 p-3 rounded-xl border dark:border-gray-600">
+                        <label className="block text-sm font-bold mb-2 text-blue-600 dark:text-blue-400">日志操作权限 (Log Permission)</label>
+                        <div className="space-y-2">
+                            {[{ val: 'A', label: 'A级: 查看所有 / 任意撤销 (最高)' }, { val: 'B', label: 'B级: 查看所有 / 仅撤销低级 (受限)' }, { val: 'C', label: 'C级: 查看所有 / 仅撤销自己' }, { val: 'D', label: 'D级: 仅查看自己 / 仅撤销自己 (最低)' }].map(opt => (
+                                <label key={opt.val} className="flex items-center gap-2 cursor-pointer p-1.5 rounded hover:bg-white dark:hover:bg-gray-600 transition-colors">
+                                    <input 
+                                        type="radio" 
+                                        name="logPermission" 
+                                        checked={(editingUser.permissions?.logPermission || 'D') === opt.val} 
+                                        onChange={() => updateEditingPermission('logPermission', opt.val)} 
+                                        className="text-blue-600 focus:ring-blue-500"
+                                        disabled={!canModify}
+                                    />
+                                    <span className={`text-sm ${!canModify ? 'opacity-50' : ''}`}>{opt.label}</span>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-bold mb-2 text-red-500">功能隐藏开关 (选中即隐藏)</label>
+                        <div className="grid grid-cols-1 gap-2">
+                            {[{ key: 'hideAuditHall', label: '隐藏“审计大厅”页面' }, { key: 'hideStoreEdit', label: '隐藏门店“修改”按钮' }, { key: 'hideNewStore', label: '隐藏“新建门店”页面' }, { key: 'hideExcelExport', label: '隐藏“Excel导出”图标' }, { key: 'hideSettings', label: '隐藏“权限设置”页面入口' }].map(item => (
+                                <label key={item.key} className={`flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 ${!canModify ? 'opacity-70 pointer-events-none' : ''}`}>
+                                    <span className="text-sm">{item.label}</span>
+                                    <div className="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
+                                        <input type="checkbox" checked={!!editingUser.permissions?.[item.key as keyof UserPermissions]} onChange={(e) => updateEditingPermission(item.key as keyof UserPermissions, e.target.checked)} className="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer checked:right-0 right-5" disabled={!canModify}/>
+                                        <label className={`toggle-label block overflow-hidden h-5 rounded-full cursor-pointer ${editingUser.permissions?.[item.key as keyof UserPermissions] ? 'bg-red-500' : 'bg-gray-300'}`}></label>
+                                    </div>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-bold mb-2 text-gray-700 dark:text-gray-300">列表可见性范围</label>
+                        <div className="flex flex-col gap-2">
+                            <label className={`flex items-center gap-2 text-sm p-1 ${!canModify ? 'opacity-70' : ''}`}><input type="checkbox" checked={editingUser.permissions?.allowPeerLevel} onChange={e => updateEditingPermission('allowPeerLevel', e.target.checked)} className="rounded" disabled={!canModify}/>允许查看/创建同级用户 (例如 03 可见 03)</label>
+                            <label className={`flex items-center gap-2 text-sm p-1 ${!canModify ? 'opacity-70' : ''}`}><input type="checkbox" checked={!editingUser.permissions?.hideSelf} onChange={e => updateEditingPermission('hideSelf', !e.target.checked)} className="rounded" disabled={!canModify}/>在列表中显示自己</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="mt-8 pt-4 border-t dark:border-gray-700 flex justify-between items-center">
+               <div className="text-xs text-gray-400 flex items-center gap-1"><Trash2 className="w-3 h-3"/> * 删除模式：系统强制执行全员软删除 (逻辑隐藏)。</div>
+               <div className="flex gap-3">
+                    <button onClick={() => setIsEditModalOpen(false)} className="px-6 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">取消</button>
+                    {canModify && <button onClick={savePermissionUser} className="px-6 py-2 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-colors">保存配置</button>}
+               </div>
+            </div>
+         </div>
+      </div>
+    );
   };
 
   return (
@@ -248,100 +380,25 @@ const SettingsPage = () => {
                         <div key={u.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600">
                             <div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center text-xs font-bold font-mono">{u.role}</div><div><UsernameBadge name={u.username} roleLevel={u.role} /><p className="text-xs text-gray-500">{getPermissionDesc(u.role)}</p></div></div>
                             <div className="flex gap-2">
-                                {(user?.id === u.id || user?.role === RoleLevel.ROOT || isLower) && (<><button onClick={() => handleEditUser(u)} className="p-2 hover:bg-white dark:hover:bg-gray-600 rounded-lg shadow-sm"><Edit className="w-4 h-4 text-blue-500" /></button>{user?.id !== u.id && (<button className="p-2 hover:bg-white dark:hover:bg-gray-600 rounded-lg shadow-sm"><Trash2 className="w-4 h-4 text-red-500" /></button>)}</>)}
+                                {/* Edit Button visibility based on roles */}
+                                {(user?.id === u.id || user?.role === RoleLevel.ROOT || isLower || (isPeer && user?.permissions?.allowPeerLevel)) && (
+                                    <>
+                                        <button onClick={() => handleEditUser(u)} className="p-2 hover:bg-white dark:hover:bg-gray-600 rounded-lg shadow-sm"><Edit className="w-4 h-4 text-blue-500" /></button>
+                                        {user?.id !== u.id && user?.role !== u.role && (
+                                            <button className="p-2 hover:bg-white dark:hover:bg-gray-600 rounded-lg shadow-sm"><Trash2 className="w-4 h-4 text-red-500" /></button>
+                                        )}
+                                    </>
+                                )}
                             </div>
                         </div>
                         );
                     })}
                 </div>
-                
-                {/* Inline Edit Modal */}
-                {isEditModalOpen && editingUser && (
-                   <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm animate-fade-in">
-                      <div className="bg-white dark:bg-gray-800 w-full max-w-3xl rounded-2xl shadow-2xl p-6 relative max-h-[90vh] overflow-y-auto">
-                         <button onClick={() => setIsEditModalOpen(false)} className="absolute top-4 right-4 text-gray-500"><X className="w-5 h-5"/></button>
-                         <h3 className="text-xl font-bold mb-6 dark:text-white">{users.some(u => u.id === editingUser.id) ? '编辑用户' : '新建用户'}</h3>
-                         
-                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                             <div className="space-y-5">
-                                 <h4 className="font-bold text-gray-700 dark:text-gray-300 border-b pb-2 flex items-center gap-2"><UserIcon className="w-4 h-4"/> 基础信息</h4>
-                                 <div><label className="block text-sm font-medium mb-1 text-gray-500">用户 ID (不可修改)</label><div className="p-2 bg-gray-100 dark:bg-gray-700 rounded text-gray-500 font-mono text-xs break-all">{editingUser.id}</div></div>
-                                 <div><label className="block text-sm font-medium mb-1">用户名</label><input type="text" value={editingUser.username} onChange={e => setEditingUser({...editingUser, username: e.target.value})} className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 outline-none focus:border-blue-500"/></div>
-                                 <div><label className="block text-sm font-medium mb-1">登录密码 (管理员可重置)</label><input type="text" value={editingUser.password || ''} onChange={e => setEditingUser({...editingUser, password: e.target.value})} placeholder="设置密码" className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 outline-none focus:border-blue-500 font-mono"/></div>
-                                 <div>
-                                     <label className="block text-sm font-medium mb-1">角色等级 (00-09)</label>
-                                     {(user?.role === RoleLevel.ROOT || (user?.role && user.role < editingUser.role)) ? (
-                                         <select value={editingUser.role} onChange={e => setEditingUser({...editingUser, role: e.target.value as RoleLevel})} className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 outline-none focus:border-blue-500">
-                                         {Object.values(RoleLevel).map(r => ((user?.role === RoleLevel.ROOT || r > (user?.role || RoleLevel.GUEST)) && (<option key={r} value={r}>{r}</option>)))}
-                                         </select>
-                                     ) : (<div className="p-2 bg-gray-100 dark:bg-gray-700 rounded text-gray-500">{editingUser.role} (权限不足，不可修改)</div>)}
-                                     <p className="text-xs text-gray-500 mt-1">{getPermissionDesc(editingUser.role)}</p>
-                                 </div>
-                             </div>
-
-                             <div className="space-y-6">
-                                 <h4 className="font-bold text-gray-700 dark:text-gray-300 border-b pb-2 flex items-center gap-2"><Shield className="w-4 h-4"/> 权限矩阵配置 (独立控制)</h4>
-                                 <p className="text-xs text-gray-400">以下开关独立于角色等级，严格控制功能入口。</p>
-                                 <div className="bg-gray-50 dark:bg-gray-700/30 p-3 rounded-xl border dark:border-gray-600">
-                                     <label className="block text-sm font-bold mb-2 text-blue-600 dark:text-blue-400">日志操作权限 (Log Permission)</label>
-                                     <div className="space-y-2">
-                                         {[{ val: 'A', label: 'A级: 查看所有 / 任意撤销 (最高)' }, { val: 'B', label: 'B级: 查看所有 / 仅撤销低级 (受限)' }, { val: 'C', label: 'C级: 查看所有 / 仅撤销自己' }, { val: 'D', label: 'D级: 仅查看自己 / 仅撤销自己 (最低)' }].map(opt => (
-                                             <label key={opt.val} className="flex items-center gap-2 cursor-pointer p-1.5 rounded hover:bg-white dark:hover:bg-gray-600 transition-colors">
-                                                 <input type="radio" name="logPermission" checked={(editingUser.permissions?.logPermission || 'D') === opt.val} onChange={() => updateEditingPermission('logPermission', opt.val)} className="text-blue-600 focus:ring-blue-500"/>
-                                                 <span className="text-sm">{opt.label}</span>
-                                             </label>
-                                         ))}
-                                     </div>
-                                 </div>
-                                 <div>
-                                     <label className="block text-sm font-bold mb-2 text-red-500">功能隐藏开关 (选中即隐藏)</label>
-                                     <div className="grid grid-cols-1 gap-2">
-                                         {[{ key: 'hideAuditHall', label: '隐藏“审计大厅”页面' }, { key: 'hideStoreEdit', label: '隐藏门店“修改”按钮' }, { key: 'hideNewStore', label: '隐藏“新建门店”页面' }, { key: 'hideExcelExport', label: '隐藏“Excel导出”图标' }, { key: 'hideSettings', label: '隐藏“权限设置”页面入口' }].map(item => (
-                                             <label key={item.key} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600">
-                                                 <span className="text-sm">{item.label}</span>
-                                                 <div className="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
-                                                     <input type="checkbox" checked={!!editingUser.permissions?.[item.key as keyof UserPermissions]} onChange={(e) => updateEditingPermission(item.key as keyof UserPermissions, e.target.checked)} className="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer checked:right-0 right-5"/>
-                                                     <label className={`toggle-label block overflow-hidden h-5 rounded-full cursor-pointer ${editingUser.permissions?.[item.key as keyof UserPermissions] ? 'bg-red-500' : 'bg-gray-300'}`}></label>
-                                                 </div>
-                                             </label>
-                                         ))}
-                                     </div>
-                                 </div>
-                                 <div>
-                                     <label className="block text-sm font-bold mb-2 text-gray-700 dark:text-gray-300">列表可见性范围</label>
-                                     <div className="flex flex-col gap-2">
-                                         <label className="flex items-center gap-2 text-sm p-1"><input type="checkbox" checked={editingUser.permissions?.allowPeerLevel} onChange={e => updateEditingPermission('allowPeerLevel', e.target.checked)} className="rounded"/>允许查看/创建同级用户 (例如 03 可见 03)</label>
-                                         <label className="flex items-center gap-2 text-sm p-1"><input type="checkbox" checked={!editingUser.permissions?.hideSelf} onChange={e => updateEditingPermission('hideSelf', !e.target.checked)} className="rounded"/>在列表中显示自己</label>
-                                     </div>
-                                 </div>
-                             </div>
-                         </div>
-
-                         <div className="mt-8 pt-4 border-t dark:border-gray-700 flex justify-between items-center">
-                            <div className="text-xs text-gray-400 flex items-center gap-1"><Trash2 className="w-3 h-3"/> * 删除模式：系统强制执行全员软删除 (逻辑隐藏)。</div>
-                            <div className="flex gap-3">
-                                 <button onClick={() => setIsEditModalOpen(false)} className="px-6 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">取消</button>
-                                 <button onClick={savePermissionUser} className="px-6 py-2 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-colors">保存配置</button>
-                            </div>
-                         </div>
-                      </div>
-                   </div>
-                )}
+                <UserEditModal />
             </div>
             )}
         </div>
       )}
-
-      <div>
-        <SectionHeader id="connection" title="连接配置" icon={Database} colorClass="bg-red-500" />
-        {openSection === 'connection' && (
-          <div className="p-6 bg-white dark:bg-gray-800 rounded-b-xl border-x border-b border-gray-100 dark:border-gray-700 animate-slide-down">
-             {user?.role === RoleLevel.ROOT ? (
-               <div className="bg-gray-900 text-green-400 font-mono text-sm p-4 rounded-lg overflow-x-auto"><p className="opacity-50">// System Status: Online</p><p>SUPABASE_URL = "{SUPABASE_URL}"</p><p className="text-yellow-400">SQL_SYNC: No changes detected.</p><p className="text-gray-500 mt-2">// SQL是否必须包含重置数据库: 否</p><button className="mt-2 px-3 py-1 bg-green-900/50 border border-green-700 text-xs rounded hover:bg-green-800">Force Sync</button></div>
-             ) : (<div className="text-center py-8 text-gray-400"><Shield className="w-12 h-12 mx-auto mb-2 opacity-20" /><p>您没有权限查看连接配置 (需要 00 权限)</p></div>)}
-          </div>
-        )}
-      </div>
 
       <div>
         <SectionHeader id="theme" title="应用主题" icon={Palette} colorClass="bg-orange-500" />
