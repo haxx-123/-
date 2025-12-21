@@ -8,7 +8,7 @@ export const THEMES: { mode: ThemeMode; name: string; bg: string; text: string }
   { mode: 'prism-dark', name: '棱镜专属深色', bg: '#1D2021', text: '#EBDBB2' }, // Dark Grey & Oatmeal
 ];
 
-// Empty initial states
+// Empty initial states - Real data will be fetched from Supabase
 export const MOCK_USERS: User[] = [];
 export const MOCK_USER = null;
 export const MOCK_STORES: Store[] = [];

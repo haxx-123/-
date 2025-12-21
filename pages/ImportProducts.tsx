@@ -154,6 +154,10 @@ const ImportProducts = () => {
           alert('母门店无法直接录入商品');
           return;
       }
+      if (currentStore.id === 'dummy' || !currentStore.id) {
+          alert('请先在“门店管理”中创建并选择一个门店');
+          return;
+      }
       if (!manualForm.name || !manualForm.batchNumber) {
           alert('请填写名称和批号');
           return;
@@ -210,7 +214,7 @@ const ImportProducts = () => {
 
       } catch (err) {
           console.error(err);
-          alert('录入失败');
+          alert('录入失败，请检查控制台或数据库连接');
       }
   };
 

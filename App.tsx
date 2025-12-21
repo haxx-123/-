@@ -294,21 +294,57 @@ const Login = () => {
   const [targetFaceData, setTargetFaceData] = useState<string | undefined>(undefined);
   
   const handleLogin = () => {
+    // 1. Try to find user in loaded users (from DB)
     const userExists = users.find(u => u.username === inputName);
-    if (!userExists) { alert("用户名错误"); return; }
-    if (userExists.password !== inputPass) { alert("密码错误"); return; }
+    
+    // 2. Fallback: If DB is empty or user not found, allow "Emergency Admin" if credentials match
+    if (!userExists) {
+        if (inputName === '管理员' && inputPass === 'ss631204') {
+            // Create a temporary root user object
+            const rootUser: User = {
+                id: 'u_root_fallback',
+                username: '管理员',
+                role: RoleLevel.ROOT,
+                password: 'ss631204',
+                permissions: { logPermission: 'A' }
+            };
+            login(rootUser);
+            return;
+        }
+        alert("用户名错误");
+        return;
+    }
+
+    // 3. Check password
+    if (userExists.password !== inputPass) { 
+        alert("密码错误"); 
+        return; 
+    }
+
     login(userExists);
   };
 
   const handleFaceIDClick = () => {
       let targetUser = users.find(u => u.username === inputName);
-      if (!targetUser && !inputName) targetUser = users.find(u => u.role === RoleLevel.ROOT);
-      if (targetUser) { setTargetFaceData(targetUser.avatar); setUseFaceID(true); } else { alert("请输入用户名以便匹配人脸数据，或使用密码登录。"); }
+      // Fallback for face ID if using the default admin name
+      if (!targetUser && inputName === '管理员') {
+          // If no user found in DB but trying to use admin face ID, we can't really verify against anything
+          // unless we have a hardcoded face hash (which we don't).
+          // Just allow the UI to open for now, it will fail matching.
+          alert("初始管理员请先使用密码登录，并在设置中录入人脸。");
+          return;
+      }
+
+      if (targetUser) { 
+          setTargetFaceData(targetUser.avatar); 
+          setUseFaceID(true); 
+      } else { 
+          alert("请输入用户名以便匹配人脸数据，或使用密码登录。"); 
+      }
   };
 
   const handleFaceSuccess = () => {
       let targetUser = users.find(u => u.username === inputName);
-      if (!targetUser && !inputName) targetUser = users.find(u => u.role === RoleLevel.ROOT);
       if (targetUser) { login(targetUser); setUseFaceID(false); }
   };
 
