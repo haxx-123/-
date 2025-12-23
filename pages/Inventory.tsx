@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, ChevronDown, ChevronRight, Plus, Package, FileText, Edit2, X, Save, ArrowRightLeft, Info, ScanLine, Filter, MapPin, Trash2, Image as ImageIcon } from 'lucide-react';
+import { Search, ChevronDown, ChevronRight, Plus, Package, FileText, Edit2, X, Save, ArrowRightLeft, Info, ScanLine, Filter, MapPin, Trash2, Image as ImageIcon, ChevronLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Product, Batch, RoleLevel, LogAction } from '../types';
 import { useApp } from '../App';
@@ -10,11 +10,27 @@ import CameraModal from '../components/CameraModal';
 import { supabase } from '../supabase';
 import * as XLSX from 'xlsx';
 
-// --- Modals (Keep existing UI logic, just ensure types are good) ---
+// --- Loading Button ---
+const LoadingButton = ({ onClick, loading, children, className }: any) => (
+    <button onClick={onClick} disabled={loading} className={`${className} ${loading ? 'opacity-70 cursor-not-allowed' : ''} flex items-center justify-center gap-2`}>
+        {loading && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>}
+        {children}
+    </button>
+);
+
+// --- Modals ---
 const BillingModal = ({ batch, productName, onClose, onConfirm }: any) => {
   const [type, setType] = useState<'in' | 'out'>('out');
   const [qty, setQty] = useState(1);
   const [unit, setUnit] = useState('big');
+  const [loading, setLoading] = useState(false);
+
+  const handleConfirm = async () => {
+      setLoading(true);
+      await onConfirm(type, qty, unit);
+      setLoading(false);
+  };
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm">
       <div className="bg-white dark:bg-gray-800 w-full max-w-md rounded-2xl p-6 shadow-2xl">
@@ -35,7 +51,7 @@ const BillingModal = ({ batch, productName, onClose, onConfirm }: any) => {
         </div>
         <div className="mt-6 flex justify-end gap-2">
             <button onClick={onClose} className="px-4 py-2 bg-gray-200 rounded">取消</button>
-            <button onClick={() => onConfirm(type, qty, unit)} className="px-4 py-2 bg-blue-600 text-white rounded">确认</button>
+            <LoadingButton onClick={handleConfirm} loading={loading} className="px-4 py-2 bg-blue-600 text-white rounded">确认</LoadingButton>
         </div>
       </div>
     </div>
@@ -44,6 +60,7 @@ const BillingModal = ({ batch, productName, onClose, onConfirm }: any) => {
 
 const AdjustModal = ({ target, type, onClose, onSave }: any) => {
     const [formData, setFormData] = useState({...target});
+    const [loading, setLoading] = useState(false);
     return (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50">
             <div className="bg-white dark:bg-gray-800 w-full max-w-lg rounded-2xl p-6 shadow-2xl">
@@ -64,7 +81,7 @@ const AdjustModal = ({ target, type, onClose, onSave }: any) => {
                 </div>
                 <div className="mt-4 flex justify-end gap-2">
                     <button onClick={onClose} className="px-4 py-2 bg-gray-200 rounded">取消</button>
-                    <button onClick={() => onSave(formData)} className="px-4 py-2 bg-blue-600 text-white rounded">保存</button>
+                    <LoadingButton onClick={async () => { setLoading(true); await onSave(formData); setLoading(false); }} loading={loading} className="px-4 py-2 bg-blue-600 text-white rounded">保存</LoadingButton>
                 </div>
             </div>
         </div>
@@ -73,6 +90,7 @@ const AdjustModal = ({ target, type, onClose, onSave }: any) => {
 
 const AddBatchModal = ({ product, onClose, onAdd }: any) => {
     const [form, setForm] = useState({ batchNumber: '', expiryDate: '', quantityBig: 0, quantitySmall: 0, unitBig: '整', unitSmall: '散', notes: '' });
+    const [loading, setLoading] = useState(false);
     return (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50">
             <div className="bg-white dark:bg-gray-800 w-full max-w-md rounded-2xl p-6 shadow-2xl">
@@ -87,12 +105,25 @@ const AddBatchModal = ({ product, onClose, onAdd }: any) => {
                 </div>
                 <div className="mt-4 flex justify-end gap-2">
                     <button onClick={onClose} className="px-4 py-2 bg-gray-200 rounded">取消</button>
-                    <button onClick={() => onAdd(form)} className="px-4 py-2 bg-blue-600 text-white rounded">添加</button>
+                    <LoadingButton onClick={async () => { setLoading(true); await onAdd(form); setLoading(false); }} loading={loading} className="px-4 py-2 bg-blue-600 text-white rounded">添加</LoadingButton>
                 </div>
             </div>
         </div>
     );
 };
+
+// --- Pagination Component ---
+const Pagination = ({ current, total, pageSize, onChange }: { current: number, total: number, pageSize: number, onChange: (p: number) => void }) => {
+    const totalPages = Math.ceil(total / pageSize);
+    if (totalPages <= 1) return null;
+    return (
+        <div className="flex items-center justify-center gap-4 mt-6 pt-4 border-t dark:border-gray-700">
+            <button onClick={() => onChange(Math.max(1, current - 1))} disabled={current === 1} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed bg-white dark:bg-gray-800 shadow-sm border border-gray-200 dark:border-gray-700"><ChevronLeft className="w-5 h-5"/></button>
+            <span className="text-sm font-medium text-gray-600 dark:text-gray-300">第 {current} 页 / 共 {totalPages} 页</span>
+            <button onClick={() => onChange(Math.min(totalPages, current + 1))} disabled={current === totalPages} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed bg-white dark:bg-gray-800 shadow-sm border border-gray-200 dark:border-gray-700"><ChevronRight className="w-5 h-5"/></button>
+        </div>
+    );
+}
 
 const Inventory = () => {
   const { user, currentStore, setPageActions, products, stores, reloadData } = useApp();
@@ -103,6 +134,10 @@ const Inventory = () => {
   const [billingModal, setBillingModal] = useState<any>({ open: false });
   const [adjustModal, setAdjustModal] = useState<any>({ open: false });
   const [addBatchModal, setAddBatchModal] = useState<any>({ open: false });
+  
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 15;
 
   const isolatedProducts = useMemo(() => {
       return products.filter(p => {
@@ -119,6 +154,15 @@ const Inventory = () => {
         return matchesSearch && matchesCategory;
     });
   }, [isolatedProducts, searchTerm, categoryFilter]);
+
+  // Paginated Data
+  const paginatedProducts = useMemo(() => {
+      const start = (currentPage - 1) * pageSize;
+      return filteredProducts.slice(start, start + pageSize);
+  }, [filteredProducts, currentPage]);
+
+  // Reset page on search
+  useEffect(() => { setCurrentPage(1); }, [searchTerm, categoryFilter]);
 
   // --- Real DB Actions ---
 
@@ -154,7 +198,7 @@ const Inventory = () => {
 
           await reloadData();
           setBillingModal({ open: false });
-          alert('操作成功');
+          // alert('操作成功'); // Removed alert to improve speed perception
       } catch (err) {
           alert('操作失败');
           console.error(err);
@@ -192,7 +236,6 @@ const Inventory = () => {
 
           await reloadData();
           setAdjustModal({ open: false });
-          alert('调整保存成功');
       } catch (err) {
           alert('保存失败');
       }
@@ -216,7 +259,6 @@ const Inventory = () => {
 
           await reloadData();
           setAddBatchModal({ open: false });
-          alert('新增批号成功');
       } catch (err) {
           alert('新增失败');
       }
@@ -225,7 +267,6 @@ const Inventory = () => {
   const handleDeleteProduct = async (product: Product) => {
       if(!window.confirm(`确定要删除 "${product.name}" 吗？`)) return;
       try {
-          // Cascading delete on DB usually handles batches, but let's be safe if RLS allows
           const { error } = await supabase.from('products').delete().eq('id', product.id);
           if (error) throw error;
 
@@ -272,7 +313,7 @@ const Inventory = () => {
                 <tr><th className="p-4 w-12"></th><th className="p-4">商品信息</th><th className="p-4">SKU / 分类</th><th className="p-4 text-center">总整存</th><th className="p-4 text-center">总散存</th><th className="p-4 text-right">操作</th></tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                {filteredProducts.map((product, index) => {
+                {paginatedProducts.map((product, index) => {
                     const isExpanded = expandedProducts.has(product.id);
                     const totalBig = product.batches.reduce((acc, b) => acc + b.quantityBig, 0);
                     const totalSmall = product.batches.reduce((acc, b) => acc + b.quantitySmall, 0);
@@ -325,6 +366,9 @@ const Inventory = () => {
             </table>
             </div>
       </div>
+      
+      {/* Pagination Control */}
+      <Pagination current={currentPage} total={filteredProducts.length} pageSize={pageSize} onChange={setCurrentPage} />
     </div>
   );
 };

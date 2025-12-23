@@ -8,6 +8,37 @@ import { useApp } from '../App';
 import { Product, Batch, RoleLevel, LogAction } from '../types';
 import { supabase } from '../supabase';
 
+// --- Image Compression Utility ---
+const compressImage = (file: File, maxWidth: number = 1024, quality: number = 0.7): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target?.result as string;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+
+                if (width > maxWidth) {
+                    height *= maxWidth / width;
+                    width = maxWidth;
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx?.drawImage(img, 0, 0, width, height);
+                
+                resolve(canvas.toDataURL(file.type, quality));
+            };
+            img.onerror = (err) => reject(err);
+        };
+        reader.onerror = (err) => reject(err);
+    });
+};
+
 // --- Excel Column Mapping Modal ---
 const ExcelMappingModal = ({ 
     file, 
@@ -20,7 +51,6 @@ const ExcelMappingModal = ({
     onClose: () => void; 
     onConfirm: (mapping: any) => void; 
 }) => {
-    // Standard system fields
     const systemFields = [
         { key: 'name', label: '商品名称', required: true },
         { key: 'batchNumber', label: '批号', required: true },
@@ -35,10 +65,7 @@ const ExcelMappingModal = ({
         { key: 'notes', label: '备注', required: false },
     ];
 
-    // Get Excel headers (keys of the first object)
     const excelHeaders = jsonData.length > 0 ? Object.keys(jsonData[0]) : [];
-    
-    // Auto-guess mapping based on similarity
     const initialMapping: any = {};
     systemFields.forEach(field => {
         const match = excelHeaders.find(h => h.includes(field.label.split(' ')[0]) || h.toLowerCase().includes(field.key.toLowerCase()));
@@ -48,7 +75,6 @@ const ExcelMappingModal = ({
     const [mapping, setMapping] = useState<any>(initialMapping);
 
     const handleConfirm = () => {
-        // Validate required fields
         const missing = systemFields.filter(f => f.required && !mapping[f.key]);
         if (missing.length > 0) {
             alert(`请映射必填字段: ${missing.map(f => f.label).join(', ')}`);
@@ -169,7 +195,6 @@ const ImportProducts = () => {
       const createdProductIds: string[] = [];
 
       try {
-          // Process sequentially to handle potential duplicate product creations in the same batch
           for (const row of excelData) {
               const name = row[mapping.name];
               const batchNum = row[mapping.batchNumber];
@@ -179,11 +204,7 @@ const ImportProducts = () => {
                   continue;
               }
 
-              // 1. Check if product exists in current store (by name)
-              // NOTE: In a real scenario, we might query Supabase directly to be sure, 
-              // but using the `products` context is faster for now.
               let productId = products.find(p => p.name === name && p.storeId === currentStore.id)?.id;
-              let isNewProduct = false;
 
               if (!productId) {
                   // Create Product
@@ -199,16 +220,14 @@ const ImportProducts = () => {
                   
                   const { data: newProd, error: pError } = await supabase.from('products').insert(prodData).select().single();
                   if (pError) {
-                      console.error("Product creation failed", pError);
                       failCount++;
                       continue;
                   }
                   productId = newProd.id;
-                  isNewProduct = true;
                   createdProductIds.push(productId);
               }
 
-              // 2. Create Batch
+              // Create Batch
               const batchData = {
                   id: `b_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
                   product_id: productId,
@@ -218,21 +237,19 @@ const ImportProducts = () => {
                   quantity_small: mapping.quantitySmall ? (Number(row[mapping.quantitySmall]) || 0) : 0,
                   unit_big: mapping.unitBig && row[mapping.unitBig] ? row[mapping.unitBig] : '整',
                   unit_small: mapping.unitSmall && row[mapping.unitSmall] ? row[mapping.unitSmall] : '散',
-                  conversion_rate: 1, // Default, assumed 1 for basic import unless specified
+                  conversion_rate: 1, 
                   price: mapping.price ? (Number(row[mapping.price]) || 0) : 0,
                   notes: mapping.notes ? row[mapping.notes] : ''
               };
 
               const { error: bError } = await supabase.from('batches').insert(batchData);
               if (bError) {
-                  console.error("Batch creation failed", bError);
                   failCount++;
               } else {
                   successCount++;
               }
           }
 
-          // 3. Log Operation
           if (successCount > 0) {
             await supabase.from('operation_logs').insert({
                 id: `log_${Date.now()}`,
@@ -262,9 +279,14 @@ const ImportProducts = () => {
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) {
-          const reader = new FileReader();
-          reader.readAsDataURL(file);
-          reader.onload = (e) => setProductImage(e.target?.result as string);
+          try {
+              // Compress the image before setting it
+              const compressedBase64 = await compressImage(file, 1024, 0.7);
+              setProductImage(compressedBase64);
+          } catch (error) {
+              console.error("Image compression failed", error);
+              alert("图片处理失败，请重试");
+          }
       }
   };
 
@@ -283,11 +305,9 @@ const ImportProducts = () => {
       }
 
       try {
-          // Check for existing product logic
           let productId = products.find(p => p.name === manualForm.name && p.storeId === currentStore.id)?.id;
           
           if (!productId) {
-            // 1. Insert Product
             const prodData = {
                 id: `p_${Date.now()}`,
                 store_id: currentStore.id,
@@ -302,7 +322,6 @@ const ImportProducts = () => {
             productId = newProd.id;
           }
 
-          // 2. Insert Batch
           const batchData = {
               id: `b_${Date.now()}`,
               product_id: productId,
@@ -318,7 +337,6 @@ const ImportProducts = () => {
           const { error: bError } = await supabase.from('batches').insert(batchData);
           if (bError) throw bError;
 
-          // 3. Log
           await supabase.from('operation_logs').insert({
               id: `log_${Date.now()}`,
               action_type: LogAction.ENTRY_INBOUND,
@@ -402,7 +420,7 @@ const ImportProducts = () => {
                       <img src={productImage} alt="Scanned" className="w-full h-full object-contain" />
                     ) : (
                       <div className="text-center text-gray-400 cursor-pointer" onClick={() => fileInputRef.current?.click()}>
-                        <ImageIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />点击上传图片
+                        <ImageIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />点击上传图片 (自动压缩)
                       </div>
                     )}
                     <button onClick={() => setShowCamera(true)} className="absolute bottom-4 right-4 p-3 bg-blue-600 text-white rounded-full shadow-lg"><Camera className="w-6 h-6" /></button>
