@@ -1,14 +1,16 @@
+
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, ChevronUp, Database, User as UserIcon, Shield, Palette, Plus, Edit, Trash2, X, Save, ScanFace, Lock, RefreshCcw, Eye, EyeOff, LayoutTemplate, ArrowRight, AlertCircle } from 'lucide-react';
+import { ChevronDown, ChevronUp, User as UserIcon, Shield, Palette, Plus, Edit, Trash2, X, Save, RefreshCcw, ArrowRight, AlertCircle } from 'lucide-react';
 import { THEMES } from '../constants';
-import { RoleLevel, User, LogPermissionLevel, UserPermissions } from '../types';
+import { RoleLevel, User, UserPermissions } from '../types';
 import { useApp } from '../App';
 import UsernameBadge from '../components/UsernameBadge';
 import CameraModal from '../components/CameraModal';
 import * as XLSX from 'xlsx';
+import { supabase } from '../supabase';
 
 const SettingsPage = () => {
-  const { theme, setTheme, user, login, logout, setPageActions, users, setUsers } = useApp();
+  const { theme, setTheme, user, login, logout, setPageActions, users, setUsers, reloadData } = useApp();
   const [openSection, setOpenSection] = useState<string | null>('account');
   
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -59,19 +61,32 @@ const SettingsPage = () => {
       });
   };
 
-  const handleSaveAccount = () => {
+  const handleSaveAccount = async () => {
       if (!isAccountDirty || !user) return;
       
-      const updatedUsers = users.map(u => 
-        u.id === user.id ? { ...u, username: accountForm.username, password: accountForm.password || u.password, avatar: accountForm.avatar || u.avatar } : u
-      );
-      setUsers(updatedUsers);
-      
-      const updatedUser = updatedUsers.find(u => u.id === user.id);
-      if(updatedUser) login(updatedUser);
+      try {
+          const updates: any = {
+              username: accountForm.username,
+              avatar: accountForm.avatar
+          };
+          if (accountForm.password) {
+              updates.password = accountForm.password;
+          }
 
-      alert('账户信息已更新 (已同步至全局状态)');
-      setIsAccountDirty(false);
+          const { error } = await supabase.from('users').update(updates).eq('id', user.id);
+          if (error) throw error;
+
+          await reloadData();
+          alert('账户信息已更新');
+          setIsAccountDirty(false);
+          
+          // Re-login to update local state context
+          const updatedUser = users.find(u => u.id === user.id);
+          if (updatedUser) login({...updatedUser, ...updates});
+
+      } catch (err: any) {
+          alert('保存失败: ' + err.message);
+      }
   };
 
   const handleFaceRegister = (base64: string) => {
@@ -92,7 +107,7 @@ const SettingsPage = () => {
 
   const handleCreateUser = () => {
     setEditingUser({ 
-        id: `new_${Date.now()}`, 
+        id: `u_${Date.now()}`, 
         username: 'New User', 
         password: '123', // Default password
         role: RoleLevel.STAFF, 
@@ -103,7 +118,19 @@ const SettingsPage = () => {
     setIsEditModalOpen(true);
   };
 
-  const savePermissionUser = () => {
+  const handleDeleteUser = async (targetUserId: string) => {
+      if (!window.confirm("确定要删除该用户吗？此操作不可撤销。")) return;
+      try {
+          const { error } = await supabase.from('users').delete().eq('id', targetUserId);
+          if (error) throw error;
+          await reloadData();
+          alert("用户已删除");
+      } catch (err: any) {
+          alert("删除失败: " + err.message);
+      }
+  };
+
+  const savePermissionUser = async () => {
     if (editingUser) {
       // Logic constraint: Cannot save if editing existing peer user (unless self or root)
       const isPeer = user?.role === editingUser.role && user?.id !== editingUser.id;
@@ -115,27 +142,36 @@ const SettingsPage = () => {
           return;
       }
 
-      if (!window.confirm("是否确定保存，立刻生效？")) {
-          return;
-      }
+      if (!window.confirm("是否确定保存，立刻生效？")) return;
 
-      const exists = users.find(u => u.id === editingUser.id);
-      let updatedUsers;
-      
-      if (exists) {
-        updatedUsers = users.map(u => u.id === editingUser.id ? editingUser : u);
-      } else {
-        updatedUsers = [...users, editingUser];
-      }
-      
-      setUsers(updatedUsers);
-      
-      if (user && editingUser.id === user.id) {
-          login(editingUser);
-      }
+      try {
+          // Prepare payload for Supabase
+          const payload = {
+              id: editingUser.id,
+              username: editingUser.username,
+              password: editingUser.password, // Be careful in real apps
+              role: editingUser.role,
+              permissions: editingUser.permissions || {},
+              avatar: editingUser.avatar || ''
+          };
 
-      setIsEditModalOpen(false);
-      setEditingUser(null);
+          const { error } = await supabase.from('users').upsert(payload);
+          if (error) throw error;
+
+          await reloadData();
+          
+          if (user && editingUser.id === user.id) {
+              // Update self session
+              login(editingUser);
+          }
+
+          setIsEditModalOpen(false);
+          setEditingUser(null);
+          alert("保存成功");
+
+      } catch (err: any) {
+          alert("保存失败: " + err.message);
+      }
     }
   };
 
@@ -293,7 +329,7 @@ const SettingsPage = () => {
             </div>
 
             <div className="mt-8 pt-4 border-t dark:border-gray-700 flex justify-between items-center">
-               <div className="text-xs text-gray-400 flex items-center gap-1"><Trash2 className="w-3 h-3"/> * 删除模式：系统强制执行全员软删除 (逻辑隐藏)。</div>
+               <div className="text-xs text-gray-400 flex items-center gap-1"><Trash2 className="w-3 h-3"/> * 删除模式：直接从数据库物理删除。</div>
                <div className="flex gap-3">
                     <button onClick={() => setIsEditModalOpen(false)} className="px-6 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">取消</button>
                     {canModify && <button onClick={savePermissionUser} className="px-6 py-2 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-colors">保存配置</button>}
@@ -385,7 +421,7 @@ const SettingsPage = () => {
                                     <>
                                         <button onClick={() => handleEditUser(u)} className="p-2 hover:bg-white dark:hover:bg-gray-600 rounded-lg shadow-sm"><Edit className="w-4 h-4 text-blue-500" /></button>
                                         {user?.id !== u.id && user?.role !== u.role && (
-                                            <button className="p-2 hover:bg-white dark:hover:bg-gray-600 rounded-lg shadow-sm"><Trash2 className="w-4 h-4 text-red-500" /></button>
+                                            <button onClick={() => handleDeleteUser(u.id)} className="p-2 hover:bg-white dark:hover:bg-gray-600 rounded-lg shadow-sm"><Trash2 className="w-4 h-4 text-red-500" /></button>
                                         )}
                                     </>
                                 )}

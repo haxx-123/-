@@ -37,7 +37,7 @@ const StoreManager: React.FC<StoreManagerProps> = ({ onClose }) => {
 
   const handleCreate = () => {
     setEditingStore({ 
-        id: `new_${Date.now()}`, 
+        id: `store_${Date.now()}`, 
         name: '', 
         isParent: false, 
         childrenIds: [],
@@ -72,32 +72,15 @@ const StoreManager: React.FC<StoreManagerProps> = ({ onClose }) => {
           };
 
           if (view === 'new') {
-              // Creating a real store entry in DB
-              // We don't send ID, let supabase generate UUID or if we want to use specific ID logic
-              // Since the app uses string IDs, we can generate a UUID here or rely on DB default if setup
-              // For compatibility with previous structure, let's use the ID we generated if it's text
-              // But standard practice is let DB handle ID.
-              // Let's Insert and get data back
-              
-              // Note: If you want to use the 'new_...' ID generated in frontend, include it.
-              // However, cleaner to let DB generate UUID.
-              // BUT, to fix the user's immediate "Foreign Key" issue, we MUST ensure the ID used 
-              // in 'products' matches 'stores'.
-              
-              // Option A: Send the ID we made (simple, risky if collision)
-              // Option B: Omit ID, get returned ID, update local state.
-              
-              // Let's use Option A for consistency with the frontend logic if it expects string IDs
               const payload = { ...storeData, id: editingStore.id };
               const { error } = await supabase.from('stores').insert(payload);
               if (error) throw error;
-
           } else {
               const { error } = await supabase.from('stores').update(storeData).eq('id', editingStore.id);
               if (error) throw error;
           }
 
-          await reloadData(); // Refresh all data from DB
+          await reloadData(); 
           setView('list');
           
       } catch (err: any) {
