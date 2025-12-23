@@ -1,15 +1,17 @@
+
 import React, { useState } from 'react';
 import { X, Plus, Store as StoreIcon, Settings, Trash2, ArrowLeft, CheckCircle, Users, Eye, CornerDownRight, ChevronDown, ChevronRight } from 'lucide-react';
 import { Store, RoleLevel, User } from '../types';
 import { useApp } from '../App';
 import UsernameBadge from './UsernameBadge';
+import { supabase } from '../supabase';
 
 interface StoreManagerProps {
   onClose: () => void;
 }
 
 const StoreManager: React.FC<StoreManagerProps> = ({ onClose }) => {
-  const { currentStore, setCurrentStore, user, stores, setStores, users } = useApp();
+  const { currentStore, setCurrentStore, user, stores, setStores, users, reloadData } = useApp();
   
   // Views: 'list', 'edit', 'new'
   const [view, setView] = useState<'list' | 'edit' | 'new'>('list');
@@ -47,19 +49,61 @@ const StoreManager: React.FC<StoreManagerProps> = ({ onClose }) => {
     setView('new');
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (editingStore) {
       if (editingStore.isParent && (editingStore.childrenIds?.length || 0) < 2) {
           alert('母门店必须包含至少 2 个子门店');
           return;
       }
 
-      if (view === 'new') {
-        setStores([...stores, editingStore]);
-      } else {
-        setStores(stores.map(s => s.id === editingStore.id ? editingStore : s));
+      if (!editingStore.name) {
+          alert('请输入门店名称');
+          return;
       }
-      setView('list');
+
+      try {
+          const storeData = {
+              name: editingStore.name,
+              is_parent: editingStore.isParent,
+              parent_id: editingStore.parentId || null,
+              children_ids: editingStore.childrenIds || [],
+              manager_ids: editingStore.managerIds || [],
+              viewer_ids: editingStore.viewerIds || []
+          };
+
+          if (view === 'new') {
+              // Creating a real store entry in DB
+              // We don't send ID, let supabase generate UUID or if we want to use specific ID logic
+              // Since the app uses string IDs, we can generate a UUID here or rely on DB default if setup
+              // For compatibility with previous structure, let's use the ID we generated if it's text
+              // But standard practice is let DB handle ID.
+              // Let's Insert and get data back
+              
+              // Note: If you want to use the 'new_...' ID generated in frontend, include it.
+              // However, cleaner to let DB generate UUID.
+              // BUT, to fix the user's immediate "Foreign Key" issue, we MUST ensure the ID used 
+              // in 'products' matches 'stores'.
+              
+              // Option A: Send the ID we made (simple, risky if collision)
+              // Option B: Omit ID, get returned ID, update local state.
+              
+              // Let's use Option A for consistency with the frontend logic if it expects string IDs
+              const payload = { ...storeData, id: editingStore.id };
+              const { error } = await supabase.from('stores').insert(payload);
+              if (error) throw error;
+
+          } else {
+              const { error } = await supabase.from('stores').update(storeData).eq('id', editingStore.id);
+              if (error) throw error;
+          }
+
+          await reloadData(); // Refresh all data from DB
+          setView('list');
+          
+      } catch (err: any) {
+          console.error(err);
+          alert('保存失败: ' + (err.message || '数据库连接错误'));
+      }
     }
   };
 

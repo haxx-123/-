@@ -459,6 +459,19 @@ const AppContent = () => {
   const [stores, setStores] = useState<Store[]>([]); 
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
 
+  // Initialize from LocalStorage
+  useEffect(() => {
+      const storedUser = localStorage.getItem('prism_user');
+      if (storedUser) {
+          try {
+              const parsedUser = JSON.parse(storedUser);
+              setUser(parsedUser);
+          } catch (e) {
+              localStorage.removeItem('prism_user');
+          }
+      }
+  }, []);
+
   // FETCH DATA FUNCTION
   const reloadData = async () => {
     // 1. Fetch Stores
@@ -469,8 +482,12 @@ const AppContent = () => {
             parentId: s.parent_id, managerIds: s.manager_ids, viewerIds: s.viewer_ids
         }));
         setStores(mappedStores);
+        
+        // Restore Current Store if possible or default to first
         if (currentStore.id === 'dummy' && mappedStores.length > 0) {
-            setCurrentStore(mappedStores[0]);
+            const lastStoreId = localStorage.getItem('prism_last_store');
+            const targetStore = mappedStores.find(s => s.id === lastStoreId) || mappedStores[0];
+            setCurrentStore(targetStore);
         }
     }
 
@@ -523,6 +540,13 @@ const AppContent = () => {
       reloadData();
   }, []);
 
+  // Sync CurrentStore to LocalStorage
+  useEffect(() => {
+      if (currentStore.id !== 'dummy') {
+          localStorage.setItem('prism_last_store', currentStore.id);
+      }
+  }, [currentStore]);
+
   // Other effects...
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -572,6 +596,8 @@ const AppContent = () => {
   const login = (u: User) => {
       const freshUser = users.find(existing => existing.id === u.id) || u;
       setUser(freshUser);
+      localStorage.setItem('prism_user', JSON.stringify(freshUser));
+      
       // Log login to DB
       supabase.from('login_records').insert({
           id: `login_${Date.now()}`,
@@ -583,7 +609,11 @@ const AppContent = () => {
       }).then(() => reloadData());
   };
   
-  const logout = () => { setUser(null); sessionStorage.clear(); };
+  const logout = () => { 
+      setUser(null); 
+      localStorage.removeItem('prism_user');
+      sessionStorage.clear(); 
+  };
   const setTheme = (t: ThemeMode) => setThemeState(t);
 
   return (
