@@ -37,7 +37,7 @@ const StoreManager: React.FC<StoreManagerProps> = ({ onClose }) => {
 
   const handleCreate = () => {
     setEditingStore({ 
-        id: `store_${Date.now()}`, 
+        id: `store_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`, 
         name: '', 
         isParent: false, 
         childrenIds: [],
@@ -62,6 +62,7 @@ const StoreManager: React.FC<StoreManagerProps> = ({ onClose }) => {
       }
 
       try {
+          // Explicit mapping to snake_case for DB
           const storeData = {
               name: editingStore.name,
               is_parent: editingStore.isParent,
@@ -81,13 +82,37 @@ const StoreManager: React.FC<StoreManagerProps> = ({ onClose }) => {
           }
 
           await reloadData(); 
+          alert('保存成功！');
           setView('list');
           
       } catch (err: any) {
-          console.error(err);
-          alert('保存失败: ' + (err.message || '数据库连接错误'));
+          console.error("Store Save Error:", err);
+          alert(`保存失败: ${err.message || JSON.stringify(err)}`);
       }
     }
+  };
+
+  const handleDeleteStore = async (storeId: string) => {
+      if (!window.confirm("确定要删除此门店吗？删除前请确保库存已清零。")) return;
+      
+      try {
+          // Check inventory (Optional strict check)
+          const { count } = await supabase.from('products').select('*', { count: 'exact', head: true }).eq('store_id', storeId);
+          if (count && count > 0) {
+              alert(`无法删除：该门店下还有 ${count} 个商品数据。`);
+              return;
+          }
+
+          const { error } = await supabase.from('stores').delete().eq('id', storeId);
+          if (error) throw error;
+          
+          await reloadData();
+          if (currentStore.id === storeId) {
+              setCurrentStore({ id: 'dummy', name: '请选择门店', isParent: false });
+          }
+      } catch (err: any) {
+          alert(`删除失败: ${err.message}`);
+      }
   };
 
   // Helper to toggle IDs in arrays
@@ -105,9 +130,14 @@ const StoreManager: React.FC<StoreManagerProps> = ({ onClose }) => {
 
     return (
       <div className="p-6 space-y-6 animate-fade-in pb-20">
-         <div className="flex items-center gap-2 mb-4">
-           <button onClick={() => setView('list')} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full"><ArrowLeft className="w-5 h-5"/></button>
-           <h3 className="text-xl font-bold">{view === 'new' ? '新建门店' : '编辑门店'}</h3>
+         <div className="flex items-center justify-between mb-4">
+           <div className="flex items-center gap-2">
+                <button onClick={() => setView('list')} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full"><ArrowLeft className="w-5 h-5"/></button>
+                <h3 className="text-xl font-bold">{view === 'new' ? '新建门店' : '编辑门店'}</h3>
+           </div>
+           {view === 'edit' && (
+               <button onClick={() => handleDeleteStore(editingStore.id)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg"><Trash2 className="w-5 h-5"/></button>
+           )}
          </div>
 
          <div className="space-y-4 max-w-lg mx-auto">

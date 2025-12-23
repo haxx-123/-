@@ -107,7 +107,7 @@ const SettingsPage = () => {
 
   const handleCreateUser = () => {
     setEditingUser({ 
-        id: `u_${Date.now()}`, 
+        id: `u_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`, 
         username: 'New User', 
         password: '123', // Default password
         role: RoleLevel.STAFF, 
@@ -151,7 +151,7 @@ const SettingsPage = () => {
               username: editingUser.username,
               password: editingUser.password, // Be careful in real apps
               role: editingUser.role,
-              permissions: editingUser.permissions || {},
+              permissions: editingUser.permissions || {}, // This will be saved as JSONB
               avatar: editingUser.avatar || ''
           };
 
