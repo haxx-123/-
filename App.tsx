@@ -158,14 +158,24 @@ const Navbar = () => {
   const { handleCopy, handleExcel } = useContext(AppContext) as any;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const hideExcel = user?.permissions?.hideExcelExport;
+  
+  // Refined Red Dot Logic (Matches requirement)
   const unreadCount = announcements.filter(a => {
+      // Logic for "My Announcements" visibility
       if (a.hidden_by_users?.includes(user?.id || '')) return false;
+      
+      // Targeting Logic
       let isTarget = false;
-      if (!a.target_userIds || a.target_userIds.length === 0) isTarget = true;
+      if (!a.target_userIds || a.target_userIds.length === 0) isTarget = true; // Public
       else if (a.target_userIds.includes(user?.id || '')) isTarget = true;
+      
       if (!isTarget) return false;
+
+      // Read Status Logic
       return !a.read_user_ids.includes(user?.id || '');
   }).length;
+
+  const hasRedDot = unreadCount > 0;
 
   const handleScreenshot = () => {
     const mainContent = document.getElementById('main-content');
@@ -197,7 +207,7 @@ const Navbar = () => {
     <>
         <motion.button whileTap={{ scale: 0.9 }} onClick={() => setAnnouncementsOpen(true)} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 relative" title="公告">
             <Bell className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-            {unreadCount > 0 && <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}
+            {hasRedDot && <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}
         </motion.button>
         {handleCopy && <motion.button whileTap={{ scale: 0.9 }} onClick={handleCopy} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700" title="复制"><Copy className="w-5 h-5 text-gray-600 dark:text-gray-300" /></motion.button>}
         {handleExcel && !hideExcel && <motion.button whileTap={{ scale: 0.9 }} onClick={handleExcel} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700" title="导出"><RefreshCw className="w-5 h-5 text-gray-600 dark:text-gray-300" /></motion.button>}
@@ -217,7 +227,11 @@ const Navbar = () => {
       <div className="flex items-center space-x-2">
          <div className="hidden md:flex items-center space-x-2"><ActionButtons /></div>
          <div className="md:hidden relative">
-            <motion.button whileTap={{ scale: 0.9 }} onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"><MoreHorizontal className="w-6 h-6 text-gray-700 dark:text-gray-300" /><span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span></motion.button>
+            <motion.button whileTap={{ scale: 0.9 }} onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
+                <MoreHorizontal className="w-6 h-6 text-gray-700 dark:text-gray-300" />
+                {/* Mobile Menu Red Dot - synced with Announcement logic */}
+                {hasRedDot && <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>}
+            </motion.button>
             {mobileMenuOpen && <div className="absolute right-0 top-12 bg-white dark:bg-gray-800 shadow-xl rounded-xl p-2 flex flex-col gap-2 border dark:border-gray-700 min-w-[50px] items-center animate-fade-in"><ActionButtons /></div>}
          </div>
       </div>

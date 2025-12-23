@@ -1,6 +1,8 @@
+
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../App';
 import { AlertTriangle, Clock, Settings, X, TrendingUp, BarChart2, Calendar } from 'lucide-react';
+import { LogAction } from '../types';
 
 // --- Helper Components for Charts (SVG) ---
 
@@ -145,13 +147,14 @@ const AlertListModal = ({ title, items, onClose }: { title: string; items: any[]
 );
 
 const Dashboard = () => {
-  const { currentStore, products } = useApp();
+  const { currentStore, products, logs } = useApp();
   const [thresholds, setThresholds] = useState({ low: 10, expiry: 30 });
   const [showThresholdSettings, setShowThresholdSettings] = useState(false);
   const [activeModal, setActiveModal] = useState<'low' | 'expiry' | null>(null);
   const [dateRange, setDateRange] = useState<'7' | '30' | '90'>('7');
 
   // --- DATA ISOLATION LOGIC ---
+  // Get products that belong to current store (or children if parent)
   const isolatedProducts = useMemo(() => {
       return products.filter(p => {
           if (currentStore.isParent) return currentStore.childrenIds?.includes(p.storeId);
@@ -160,10 +163,10 @@ const Dashboard = () => {
   }, [products, currentStore]);
 
   // Calculate stats from ISOLATED products
-  const totalStock = isolatedProducts.reduce((acc, p) => acc + p.batches.reduce((bAcc, b) => bAcc + b.quantityBig * b.conversionRate + b.quantitySmall, 0), 0);
+  const totalStock = isolatedProducts.reduce((acc, p) => acc + p.batches.reduce((bAcc, b) => bAcc + b.quantityBig, 0), 0);
   
   const lowStockItems = isolatedProducts.flatMap(p => 
-    p.batches.filter(b => b.quantityBig < thresholds.low).map(b => ({ name: p.name, detail: `批号: ${b.batchNumber}`, value: `${b.quantityBig}盒` }))
+    p.batches.filter(b => b.quantityBig < thresholds.low).map(b => ({ name: p.name, detail: `批号: ${b.batchNumber}`, value: `${b.quantityBig}件` }))
   );
 
   const expiryItems = isolatedProducts.flatMap(p => 
@@ -184,35 +187,52 @@ const Dashboard = () => {
       label, value: value as number, color: chartColors[idx % chartColors.length]
   }));
 
-  // Logic for Dynamic Line Chart Data
+  // Logic for Dynamic Line Chart Data using Operation Logs
   const chartDataLine = useMemo(() => {
-      if (dateRange === '90') {
-          return [
-            { day: '1月', in: 1200, out: 800 },
-            { day: '2月', in: 1500, out: 1300 },
-            { day: '3月', in: 1800, out: 1600 },
-          ];
-      } else if (dateRange === '30') {
-          // Mock data for 4 weeks
-          return [
-            { day: '第一周', in: 300, out: 250 },
-            { day: '第二周', in: 400, out: 300 },
-            { day: '第三周', in: 200, out: 400 },
-            { day: '第四周', in: 500, out: 450 },
-          ];
-      } else {
-          // Default 7 days
-          return [
-            { day: '周一', in: 120, out: 80 },
-            { day: '周二', in: 150, out: 100 },
-            { day: '周三', in: 180, out: 200 },
-            { day: '周四', in: 90, out: 120 },
-            { day: '周五', in: 250, out: 150 },
-            { day: '周六', in: 300, out: 280 },
-            { day: '周日', in: 100, out: 90 },
-          ];
+      const days = parseInt(dateRange);
+      const dataMap = new Map<string, { in: number, out: number }>();
+      const today = new Date();
+
+      // Initialize map with 0s for the past X days
+      for (let i = days - 1; i >= 0; i--) {
+          const d = new Date();
+          d.setDate(today.getDate() - i);
+          const key = d.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
+          dataMap.set(key, { in: 0, out: 0 });
       }
-  }, [dateRange]);
+
+      // Filter and aggregate logs
+      logs.forEach(log => {
+          // 1. Check Store Scope via Product Link
+          // We need to know if the log target belongs to the current view's store(s).
+          // Since snapshot data contains productId, we can use that to check ownership.
+          const productId = log.snapshot_data?.productId;
+          if (!productId) return;
+
+          // Find the product in our isolated list (which is already filtered by store)
+          const belongsToView = isolatedProducts.some(p => p.id === productId);
+          if (!belongsToView) return;
+
+          // 2. Check Date Range
+          const logDate = new Date(log.created_at);
+          const diffTime = Math.abs(today.getTime() - logDate.getTime());
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          
+          if (diffDays <= days) {
+              const key = logDate.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
+              if (dataMap.has(key)) {
+                  const entry = dataMap.get(key)!;
+                  if (log.action_type === LogAction.ENTRY_INBOUND) {
+                      entry.in += (log.snapshot_data?.deltaQty || 0);
+                  } else if (log.action_type === LogAction.ENTRY_OUTBOUND) {
+                      entry.out += (log.snapshot_data?.deltaQty || 0);
+                  }
+              }
+          }
+      });
+
+      return Array.from(dataMap.entries()).map(([day, val]) => ({ day, ...val }));
+  }, [logs, dateRange, isolatedProducts]);
 
   return (
     <div className="space-y-6 animate-fade-in-up pb-20">
@@ -303,7 +323,7 @@ const Dashboard = () => {
                   <select 
                     value={dateRange} 
                     onChange={(e) => setDateRange(e.target.value as any)}
-                    className="bg-transparent text-xs font-bold outline-none text-gray-700 dark:text-gray-200"
+                    className="bg-transparent text-xs font-bold outline-none text-gray-700 dark:text-gray-200 cursor-pointer"
                   >
                      <option value="7">近7天</option>
                      <option value="30">近30天</option>
@@ -311,7 +331,11 @@ const Dashboard = () => {
                   </select>
                </div>
             </div>
-            <SimpleLineChart data={chartDataLine} />
+            {chartDataLine.some(d => d.in > 0 || d.out > 0) ? (
+                <SimpleLineChart data={chartDataLine} />
+            ) : (
+                <p className="text-center text-gray-400 py-10">此时间段暂无进出库数据</p>
+            )}
             <div className="flex justify-center gap-6 mt-4">
                <div className="flex items-center gap-2 text-xs">
                   <span className="w-3 h-1 bg-green-500 rounded-full"></span> 入库
