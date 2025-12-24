@@ -1,3 +1,4 @@
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
@@ -14,11 +15,13 @@ root.render(
   </React.StrictMode>
 );
 
-// PWA Service Worker Registration Simulation
+// PWA Service Worker Registration
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    // In a real build, this would point to the actual sw.js file
-    // navigator.serviceWorker.register('/sw.js').then(...)
-    console.log('Service Worker registered (simulated)');
+    navigator.serviceWorker.register('/sw.js').then(registration => {
+      console.log('SW registered: ', registration);
+    }).catch(registrationError => {
+      console.log('SW registration failed: ', registrationError);
+    });
   });
 }

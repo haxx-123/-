@@ -1,15 +1,16 @@
 
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, ChevronUp, User as UserIcon, Shield, Palette, Plus, Edit, Trash2, X, Save, RefreshCcw, ArrowRight, AlertCircle } from 'lucide-react';
+import { ChevronDown, ChevronUp, User as UserIcon, Shield, Palette, Plus, Edit, Trash2, X, Save, RefreshCcw, ArrowRight, AlertCircle, ToggleLeft, ToggleRight } from 'lucide-react';
 import { THEMES } from '../constants';
 import { RoleLevel, User, UserPermissions } from '../types';
 import { useApp } from '../App';
 import UsernameBadge from '../components/UsernameBadge';
-import CameraModal from '../components/CameraModal';
+import FaceID from '../components/FaceID';
+import Pagination from '../components/Pagination';
 import * as XLSX from 'xlsx';
 import { supabase } from '../supabase';
 
-// --- Helper Functions ---
+// ... (getPermissionDesc remain same) ...
 const getPermissionDesc = (role: RoleLevel) => {
     switch (role) {
       case RoleLevel.ROOT: return '00 - 最高权限 (系统管理/任意撤销)';
@@ -23,104 +24,122 @@ const getPermissionDesc = (role: RoleLevel) => {
     }
 };
 
-// --- Independent Component to fix Focus Issue ---
 interface UserEditModalProps {
     isOpen: boolean;
     onClose: () => void;
-    editingUser: User | null;
-    setEditingUser: (u: User) => void;
+    targetUser: User | null; // Just the target user object
     currentUser: User | null;
-    users: User[];
-    onSave: () => void;
+    onUpdate: () => void; // Callback to refresh data
 }
 
-const UserEditModal: React.FC<UserEditModalProps> = ({ isOpen, onClose, editingUser, setEditingUser, currentUser, users, onSave }) => {
-    if (!isOpen || !editingUser) return null;
-    
-    // Check if creating new user or editing existing
-    const isNewUser = !users.some(u => u.id === editingUser.id);
-    const isSelf = currentUser?.id === editingUser.id;
-    const isRoot = currentUser?.role === RoleLevel.ROOT;
-    const isPeer = currentUser?.role === editingUser.role;
-    
-    // Permission Logic for UI
-    const canModify = isRoot || isSelf || isNewUser || (!isPeer && currentUser && currentUser.role < editingUser.role);
-    const canSeePassword = isRoot || isSelf || isNewUser; 
+// 31. Real-time Independent Permission Modal
+const UserEditModal: React.FC<UserEditModalProps> = ({ isOpen, onClose, targetUser, currentUser, onUpdate }) => {
+    const [localUser, setLocalUser] = useState<User | null>(null);
+    const [loading, setLoading] = useState(false);
 
-    const updateEditingPermission = (key: keyof UserPermissions, value: any) => {
-        const permissions = editingUser.permissions || {};
-        setEditingUser({
-            ...editingUser,
-            permissions: { ...permissions, [key]: value }
-        });
+    // 31. Requirement: Fetch latest data to avoid interference
+    useEffect(() => {
+        if (isOpen && targetUser) {
+            const fetchFresh = async () => {
+                const { data } = await supabase.from('users').select('*').eq('id', targetUser.id).single();
+                if (data) setLocalUser(data);
+                else setLocalUser(targetUser); // Fallback
+            };
+            fetchFresh();
+        }
+    }, [isOpen, targetUser]);
+
+    if (!isOpen || !localUser) return null;
+    
+    const isSelf = currentUser?.id === localUser.id;
+    const isRoot = currentUser?.role === RoleLevel.ROOT;
+    const isPeer = currentUser?.role === localUser.role;
+    
+    // Strict modification rules
+    const canModify = isRoot || isSelf || (!isPeer && currentUser && currentUser.role < localUser.role);
+    
+    // 31. Real-time update function
+    const updateField = async (field: string, value: any, isPermission = false) => {
+        if (!canModify) return;
+        
+        // Optimistic UI update
+        const updatedUser = { ...localUser };
+        if (isPermission) {
+            updatedUser.permissions = { ...updatedUser.permissions, [field]: value };
+        } else {
+            (updatedUser as any)[field] = value;
+        }
+        setLocalUser(updatedUser);
+
+        // Silent background update
+        try {
+            const payload: any = isPermission 
+                ? { permissions: updatedUser.permissions }
+                : { [field]: value };
+            
+            await supabase.from('users').update(payload).eq('id', localUser.id);
+            onUpdate(); // Trigger parent refresh
+        } catch (err) {
+            console.error("Sync failed", err);
+            // Revert on failure (optional, for simplicity we just log)
+        }
     };
 
     return (
       <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm animate-fade-in">
          <div className="bg-white dark:bg-gray-800 w-full max-w-3xl rounded-2xl shadow-2xl p-6 relative max-h-[90vh] overflow-y-auto">
             <button onClick={onClose} className="absolute top-4 right-4 text-gray-500"><X className="w-5 h-5"/></button>
-            <h3 className="text-xl font-bold mb-6 dark:text-white">
-                {isNewUser ? '新建用户' : '编辑用户'}
+            <h3 className="text-xl font-bold mb-6 dark:text-white flex items-center gap-2">
+                <Edit className="w-5 h-5 text-blue-500"/>
+                权限配置: <span className="text-blue-600">{localUser.username}</span>
                 {!canModify && <span className="ml-3 text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded border border-yellow-200">仅查看模式</span>}
             </h3>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-5">
                     <h4 className="font-bold text-gray-700 dark:text-gray-300 border-b pb-2 flex items-center gap-2"><UserIcon className="w-4 h-4"/> 基础信息</h4>
-                    <div><label className="block text-sm font-medium mb-1 text-gray-500">用户 ID (不可修改)</label><div className="p-2 bg-gray-100 dark:bg-gray-700 rounded text-gray-500 font-mono text-xs break-all">{editingUser.id}</div></div>
+                    <div><label className="block text-sm font-medium mb-1 text-gray-500">用户 ID (不可修改)</label><div className="p-2 bg-gray-100 dark:bg-gray-700 rounded text-gray-500 font-mono text-xs break-all">{localUser.id}</div></div>
                     <div>
                         <label className="block text-sm font-medium mb-1">用户名</label>
                         <input 
                             type="text" 
-                            value={editingUser.username} 
-                            onChange={e => setEditingUser({...editingUser, username: e.target.value})} 
+                            value={localUser.username} 
+                            onBlur={(e) => updateField('username', e.target.value)}
+                            onChange={(e) => setLocalUser({...localUser, username: e.target.value})} // Local type only
                             className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 outline-none focus:border-blue-500 disabled:opacity-50 disabled:bg-gray-100"
                             disabled={!canModify}
                         />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium mb-1">登录密码 (管理员可重置)</label>
-                        <input 
-                            type="text" 
-                            value={canSeePassword ? (editingUser.password || '') : '******'} 
-                            onChange={e => setEditingUser({...editingUser, password: e.target.value})} 
-                            placeholder="设置密码" 
-                            className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 outline-none focus:border-blue-500 font-mono disabled:opacity-50 disabled:bg-gray-100"
-                            disabled={!canModify} 
-                        />
-                        {!canSeePassword && <p className="text-xs text-gray-400 mt-1">* 密码已隐藏</p>}
-                    </div>
-                    <div>
                         <label className="block text-sm font-medium mb-1">角色等级 (00-09)</label>
                         <select 
-                            value={editingUser.role} 
-                            onChange={e => setEditingUser({...editingUser, role: e.target.value as RoleLevel})} 
+                            value={localUser.role} 
+                            onChange={e => updateField('role', e.target.value)} 
                             className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 outline-none focus:border-blue-500 disabled:opacity-50"
                             disabled={!canModify}
                         >
                             {Object.values(RoleLevel).map(r => {
-                                // Logic: ROOT sees all. Others see roles lower than themselves OR equal if allowPeerLevel is on.
                                 const canSelect = isRoot || (currentUser && r > currentUser.role) || (currentUser?.permissions?.allowPeerLevel && r === currentUser.role);
                                 return canSelect && (<option key={r} value={r}>{r}</option>);
                             })}
                         </select>
-                        <p className="text-xs text-gray-500 mt-1">{getPermissionDesc(editingUser.role)}</p>
+                        <p className="text-xs text-gray-500 mt-1">{getPermissionDesc(localUser.role)}</p>
                     </div>
                 </div>
 
                 <div className="space-y-6">
-                    <h4 className="font-bold text-gray-700 dark:text-gray-300 border-b pb-2 flex items-center gap-2"><Shield className="w-4 h-4"/> 权限矩阵配置 (独立控制)</h4>
-                    <p className="text-xs text-gray-400">以下开关独立于角色等级，严格控制功能入口。</p>
+                    <h4 className="font-bold text-gray-700 dark:text-gray-300 border-b pb-2 flex items-center gap-2"><Shield className="w-4 h-4"/> 权限矩阵 (实时生效)</h4>
+                    
                     <div className="bg-gray-50 dark:bg-gray-700/30 p-3 rounded-xl border dark:border-gray-600">
-                        <label className="block text-sm font-bold mb-2 text-blue-600 dark:text-blue-400">日志操作权限 (Log Permission)</label>
+                        <label className="block text-sm font-bold mb-2 text-blue-600 dark:text-blue-400">日志操作权限</label>
                         <div className="space-y-2">
                             {[{ val: 'A', label: 'A级: 查看所有 / 任意撤销 (最高)' }, { val: 'B', label: 'B级: 查看所有 / 仅撤销低级 (受限)' }, { val: 'C', label: 'C级: 查看所有 / 仅撤销自己' }, { val: 'D', label: 'D级: 仅查看自己 / 仅撤销自己 (最低)' }].map(opt => (
                                 <label key={opt.val} className="flex items-center gap-2 cursor-pointer p-1.5 rounded hover:bg-white dark:hover:bg-gray-600 transition-colors">
                                     <input 
                                         type="radio" 
                                         name="logPermission" 
-                                        checked={(editingUser.permissions?.logPermission || 'D') === opt.val} 
-                                        onChange={() => updateEditingPermission('logPermission', opt.val)} 
+                                        checked={(localUser.permissions?.logPermission || 'D') === opt.val} 
+                                        onChange={() => updateField('logPermission', opt.val, true)} 
                                         className="text-blue-600 focus:ring-blue-500"
                                         disabled={!canModify}
                                     />
@@ -130,14 +149,14 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ isOpen, onClose, editingU
                         </div>
                     </div>
                     <div>
-                        <label className="block text-sm font-bold mb-2 text-red-500">功能隐藏开关 (选中即隐藏)</label>
+                        <label className="block text-sm font-bold mb-2 text-red-500">功能隐藏开关</label>
                         <div className="grid grid-cols-1 gap-2">
                             {[{ key: 'hideAuditHall', label: '隐藏“审计大厅”页面' }, { key: 'hideStoreEdit', label: '隐藏门店“修改”按钮' }, { key: 'hideNewStore', label: '隐藏“新建门店”页面' }, { key: 'hideExcelExport', label: '隐藏“Excel导出”图标' }, { key: 'hideSettings', label: '隐藏“权限设置”页面入口' }].map(item => (
                                 <label key={item.key} className={`flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 ${!canModify ? 'opacity-70 pointer-events-none' : ''}`}>
                                     <span className="text-sm">{item.label}</span>
                                     <div className="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
-                                        <input type="checkbox" checked={!!editingUser.permissions?.[item.key as keyof UserPermissions]} onChange={(e) => updateEditingPermission(item.key as keyof UserPermissions, e.target.checked)} className="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer checked:right-0 right-5" disabled={!canModify}/>
-                                        <label className={`toggle-label block overflow-hidden h-5 rounded-full cursor-pointer ${editingUser.permissions?.[item.key as keyof UserPermissions] ? 'bg-red-500' : 'bg-gray-300'}`}></label>
+                                        <input type="checkbox" checked={!!localUser.permissions?.[item.key as keyof UserPermissions]} onChange={(e) => updateField(item.key, e.target.checked, true)} className="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer checked:right-0 right-5" disabled={!canModify}/>
+                                        <label className={`toggle-label block overflow-hidden h-5 rounded-full cursor-pointer ${localUser.permissions?.[item.key as keyof UserPermissions] ? 'bg-red-500' : 'bg-gray-300'}`}></label>
                                     </div>
                                 </label>
                             ))}
@@ -146,19 +165,11 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ isOpen, onClose, editingU
                     <div>
                         <label className="block text-sm font-bold mb-2 text-gray-700 dark:text-gray-300">列表可见性范围</label>
                         <div className="flex flex-col gap-2">
-                            <label className={`flex items-center gap-2 text-sm p-1 ${!canModify ? 'opacity-70' : ''}`}><input type="checkbox" checked={editingUser.permissions?.allowPeerLevel} onChange={e => updateEditingPermission('allowPeerLevel', e.target.checked)} className="rounded" disabled={!canModify}/>允许查看/创建同级用户 (例如 03 可见 03)</label>
-                            <label className={`flex items-center gap-2 text-sm p-1 ${!canModify ? 'opacity-70' : ''}`}><input type="checkbox" checked={!editingUser.permissions?.hideSelf} onChange={e => updateEditingPermission('hideSelf', !e.target.checked)} className="rounded" disabled={!canModify}/>在列表中显示自己</label>
+                            <label className={`flex items-center gap-2 text-sm p-1 ${!canModify ? 'opacity-70' : ''}`}><input type="checkbox" checked={localUser.permissions?.allowPeerLevel} onChange={e => updateField('allowPeerLevel', e.target.checked, true)} className="rounded" disabled={!canModify}/>允许查看/创建同级用户 (例如 03 可见 03)</label>
+                            <label className={`flex items-center gap-2 text-sm p-1 ${!canModify ? 'opacity-70' : ''}`}><input type="checkbox" checked={!localUser.permissions?.hideSelf} onChange={e => updateField('hideSelf', !e.target.checked, true)} className="rounded" disabled={!canModify}/>在列表中显示自己</label>
                         </div>
                     </div>
                 </div>
-            </div>
-
-            <div className="mt-8 pt-4 border-t dark:border-gray-700 flex justify-between items-center">
-               <div className="text-xs text-gray-400 flex items-center gap-1"><Trash2 className="w-3 h-3"/> * 删除模式：直接从数据库物理删除。</div>
-               <div className="flex gap-3">
-                    <button onClick={onClose} className="px-6 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">取消</button>
-                    {canModify && <button onClick={onSave} className="px-6 py-2 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-colors">保存配置</button>}
-               </div>
             </div>
          </div>
       </div>
@@ -174,10 +185,15 @@ const SettingsPage = () => {
   const [isSwitchAccountModalOpen, setIsSwitchAccountModalOpen] = useState(false);
   const [showFaceReg, setShowFaceReg] = useState(false);
 
+  // Pagination for user list
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 10;
+
   const [accountForm, setAccountForm] = useState({
       username: '',
       password: '',
       avatar: '',
+      face_descriptor: [] as number[]
   });
   const [isAccountDirty, setIsAccountDirty] = useState(false);
 
@@ -188,6 +204,7 @@ const SettingsPage = () => {
               username: currentUserData.username,
               password: '', 
               avatar: currentUserData.avatar || '',
+              face_descriptor: currentUserData.face_descriptor || []
           });
           setIsAccountDirty(false);
       }
@@ -219,115 +236,49 @@ const SettingsPage = () => {
 
   const handleSaveAccount = async () => {
       if (!isAccountDirty || !user) return;
-      
       try {
-          const updates: any = {
-              username: accountForm.username,
-              avatar: accountForm.avatar
-          };
-          if (accountForm.password) {
-              updates.password = accountForm.password;
-          }
-
-          const { error } = await supabase.from('users').update(updates).eq('id', user.id);
-          if (error) throw error;
-
+          const updates: any = { username: accountForm.username, avatar: accountForm.avatar, face_descriptor: accountForm.face_descriptor };
+          if (accountForm.password) updates.password = accountForm.password;
+          await supabase.from('users').update(updates).eq('id', user.id);
           await reloadData();
           alert('账户信息已更新');
           setIsAccountDirty(false);
-          
-          // Re-login to update local state context
           const updatedUser = users.find(u => u.id === user.id);
           if (updatedUser) login({...updatedUser, ...updates});
-
-      } catch (err: any) {
-          alert('保存失败: ' + err.message);
-      }
+      } catch (err: any) { alert('保存失败: ' + err.message); }
   };
 
-  const handleFaceRegister = (base64: string) => {
-      setAccountForm(prev => ({ ...prev, avatar: base64 }));
-      setIsAccountDirty(true);
+  const handleFaceRegister = (descriptor?: number[]) => {
+      if (descriptor) { setAccountForm(prev => ({ ...prev, face_descriptor: descriptor })); setIsAccountDirty(true); }
       setShowFaceReg(false);
   };
 
-  const toggleSection = (id: string) => {
-    setOpenSection(openSection === id ? null : id);
-  };
+  const toggleSection = (id: string) => setOpenSection(openSection === id ? null : id);
 
+  // Open modal with fresh user data handled inside modal
   const handleEditUser = (u: User) => {
-    const freshUser = users.find(existing => existing.id === u.id) || u;
-    setEditingUser(JSON.parse(JSON.stringify(freshUser)));
+    setEditingUser(u);
     setIsEditModalOpen(true);
   };
 
-  const handleCreateUser = () => {
-    setEditingUser({ 
-        id: `u_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`, 
-        username: 'New User', 
-        password: '123', // Default password
-        role: RoleLevel.STAFF, 
-        permissions: {
-            logPermission: 'D' 
-        } 
-    });
+  const handleCreateUser = async () => {
+    // Creating user happens immediately in DB to allow immediate editing
+    const newUserId = `u_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    const newUser: User = { id: newUserId, username: 'New User', password: '123', role: RoleLevel.STAFF, permissions: { logPermission: 'D' } };
+    
+    await supabase.from('users').insert(newUser);
+    await reloadData();
+    setEditingUser(newUser);
     setIsEditModalOpen(true);
   };
 
   const handleDeleteUser = async (targetUserId: string) => {
       if (!window.confirm("确定要删除该用户吗？此操作不可撤销。")) return;
       try {
-          const { error } = await supabase.from('users').delete().eq('id', targetUserId);
-          if (error) throw error;
+          await supabase.from('users').delete().eq('id', targetUserId);
           await reloadData();
           alert("用户已删除");
-      } catch (err: any) {
-          alert("删除失败: " + err.message);
-      }
-  };
-
-  const savePermissionUser = async () => {
-    if (editingUser) {
-      // Logic constraint
-      const isPeer = user?.role === editingUser.role && user?.id !== editingUser.id;
-      const isNew = !users.some(u => u.id === editingUser.id);
-      const isRoot = user?.role === RoleLevel.ROOT;
-
-      if (isPeer && !isNew && !isRoot) {
-          alert("权限不足：同级用户不可修改，仅可查看。");
-          return;
-      }
-
-      if (!window.confirm("是否确定保存，立刻生效？")) return;
-
-      try {
-          // Prepare payload for Supabase
-          const payload = {
-              id: editingUser.id,
-              username: editingUser.username,
-              password: editingUser.password, // Be careful in real apps
-              role: editingUser.role,
-              permissions: editingUser.permissions || {}, // This will be saved as JSONB
-              avatar: editingUser.avatar || ''
-          };
-
-          const { error } = await supabase.from('users').upsert(payload);
-          if (error) throw error;
-
-          await reloadData();
-          
-          if (user && editingUser.id === user.id) {
-              login(editingUser);
-          }
-
-          setIsEditModalOpen(false);
-          setEditingUser(null);
-          alert("保存成功");
-
-      } catch (err: any) {
-          alert("保存失败: " + err.message);
-      }
-    }
+      } catch (err: any) { alert("删除失败: " + err.message); }
   };
 
   const switchableUsers = users.filter(u => {
@@ -349,9 +300,18 @@ const SettingsPage = () => {
     </button>
   );
 
+  // Pagination Logic
+  const visibleUsers = users.filter(u => {
+      if (u.id === user?.id && user?.permissions?.hideSelf) return false;
+      const isLower = u.role > (user?.role || RoleLevel.GUEST);
+      const isPeer = u.role === (user?.role || RoleLevel.GUEST);
+      return user?.role === RoleLevel.ROOT || isLower || (isPeer && user?.permissions?.allowPeerLevel);
+  });
+  const paginatedUsers = visibleUsers.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
   return (
     <div className="space-y-6 animate-fade-in-up pb-20">
-      {showFaceReg && <CameraModal onCapture={handleFaceRegister} onClose={() => setShowFaceReg(false)} title="录入人脸数据" />}
+      {showFaceReg && <FaceID onSuccess={handleFaceRegister} onCancel={() => setShowFaceReg(false)} mode='register' />}
       <h2 className="text-2xl font-bold dark:text-white">系统设置</h2>
       
       <div>
@@ -364,7 +324,7 @@ const SettingsPage = () => {
                         {accountForm.avatar ? (<img src={accountForm.avatar} className="w-full h-full object-cover" />) : (user?.username[0])}
                     </div>
                     <UsernameBadge name={user?.username || ''} roleLevel={user?.role || RoleLevel.STAFF} className="text-lg px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded-full" />
-                    <div className="mt-4 w-full p-3 bg-gray-50 dark:bg-gray-900 rounded-xl text-xs text-gray-500 text-center"><p className="font-mono mb-1 text-gray-400">Supabase ID (Read Only)</p><p className="font-bold text-gray-700 dark:text-gray-300 break-all">{user?.id}</p></div>
+                    <div className="mt-4 w-full p-3 bg-gray-50 dark:bg-gray-900 rounded-xl text-xs text-gray-500 text-center"><p className="font-mono mb-1 text-gray-400">Supabase ID</p><p className="font-bold text-gray-700 dark:text-gray-300 break-all">{user?.id}</p></div>
                 </div>
                 <div className="flex-1 space-y-5">
                     <div><label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">用户名</label><input type="text" value={accountForm.username} onChange={(e) => handleAccountChange('username', e.target.value)} className="w-full p-3 rounded-xl border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 outline-none"/></div>
@@ -372,8 +332,8 @@ const SettingsPage = () => {
                     <div>
                         <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">人脸识别设置</label>
                         <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-xl">
-                            {accountForm.avatar || user?.avatar ? (<span className="flex items-center gap-2 text-green-600 font-medium"><Shield className="w-4 h-4"/> 已启用保护</span>) : (<span className="flex items-center gap-2 text-gray-500 font-medium"><AlertCircle className="w-4 h-4"/> 未录入人脸</span>)}
-                            <button onClick={() => setShowFaceReg(true)} className="text-sm text-blue-600 hover:underline font-bold">{accountForm.avatar || user?.avatar ? '重新录入' : '立即录入'}</button>
+                            {(accountForm.face_descriptor && accountForm.face_descriptor.length > 0) ? (<span className="flex items-center gap-2 text-green-600 font-medium"><Shield className="w-4 h-4"/> 已录入人脸数据</span>) : (<span className="flex items-center gap-2 text-gray-500 font-medium"><AlertCircle className="w-4 h-4"/> 未录入人脸</span>)}
+                            <button onClick={() => setShowFaceReg(true)} className="text-sm text-blue-600 hover:underline font-bold">{(accountForm.face_descriptor && accountForm.face_descriptor.length > 0) ? '重新录入' : '立即录入'}</button>
                         </div>
                     </div>
                     <button onClick={handleSaveAccount} disabled={!isAccountDirty} className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${isAccountDirty ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 hover:bg-blue-700 transform active:scale-95' : 'bg-gray-200 text-gray-400 cursor-not-allowed dark:bg-gray-700 dark:text-gray-500'}`}><Save className="w-5 h-5" /> 保存修改</button>
@@ -392,7 +352,6 @@ const SettingsPage = () => {
               <div className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-2xl shadow-2xl p-6 relative">
                   <button onClick={() => setIsSwitchAccountModalOpen(false)} className="absolute top-4 right-4 text-gray-500"><X className="w-5 h-5"/></button>
                   <h3 className="text-lg font-bold mb-4">切换身份</h3>
-                  <p className="text-sm text-gray-500 mb-4">只能切换到权限等级低于当前账号的用户。</p>
                   <div className="space-y-2 max-h-[300px] overflow-y-auto">
                       {switchableUsers.length > 0 ? (switchableUsers.map(u => (
                               <button key={u.id} onClick={() => handleSwitchAccount(u)} className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors border border-gray-100 dark:border-gray-700">
@@ -411,42 +370,28 @@ const SettingsPage = () => {
             {openSection === 'permissions' && (
             <div className="p-6 bg-white dark:bg-gray-800 rounded-b-xl border-x border-b border-gray-100 dark:border-gray-700 animate-slide-down">
                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-bold text-gray-700 dark:text-gray-300">用户管理列表</h3>
+                    <h3 className="font-bold text-gray-700 dark:text-gray-300">用户列表管理</h3>
                     {(user?.role === RoleLevel.ROOT || user?.permissions?.allowPeerLevel) && (<button onClick={handleCreateUser} className="px-3 py-1.5 bg-purple-600 text-white rounded-lg text-sm flex items-center gap-1 hover:bg-purple-700"><Plus className="w-4 h-4" /> 新建用户</button>)}
                 </div>
                 <div className="space-y-3">
-                    {users.map(u => {
-                        if (u.id === user?.id && user?.permissions?.hideSelf) return null;
-                        const isLower = u.role > (user?.role || RoleLevel.GUEST);
-                        const isPeer = u.role === (user?.role || RoleLevel.GUEST);
-                        const canSee = user?.role === RoleLevel.ROOT || isLower || (isPeer && user?.permissions?.allowPeerLevel);
-                        if (!canSee) return null;
-                        return (
+                    {paginatedUsers.map(u => (
                         <div key={u.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600">
                             <div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center text-xs font-bold font-mono">{u.role}</div><div><UsernameBadge name={u.username} roleLevel={u.role} /><p className="text-xs text-gray-500">{getPermissionDesc(u.role)}</p></div></div>
                             <div className="flex gap-2">
-                                {(user?.id === u.id || user?.role === RoleLevel.ROOT || isLower || (isPeer && user?.permissions?.allowPeerLevel)) && (
-                                    <>
-                                        <button onClick={() => handleEditUser(u)} className="p-2 hover:bg-white dark:hover:bg-gray-600 rounded-lg shadow-sm"><Edit className="w-4 h-4 text-blue-500" /></button>
-                                        {user?.id !== u.id && user?.role !== u.role && (
-                                            <button onClick={() => handleDeleteUser(u.id)} className="p-2 hover:bg-white dark:hover:bg-gray-600 rounded-lg shadow-sm"><Trash2 className="w-4 h-4 text-red-500" /></button>
-                                        )}
-                                    </>
-                                )}
+                                <button onClick={() => handleEditUser(u)} className="p-2 hover:bg-white dark:hover:bg-gray-600 rounded-lg shadow-sm"><Edit className="w-4 h-4 text-blue-500" /></button>
+                                {user?.id !== u.id && user?.role !== u.role && <button onClick={() => handleDeleteUser(u.id)} className="p-2 hover:bg-white dark:hover:bg-gray-600 rounded-lg shadow-sm"><Trash2 className="w-4 h-4 text-red-500" /></button>}
                             </div>
                         </div>
-                        );
-                    })}
+                    ))}
                 </div>
-                {/* Independent Modal Component Call */}
+                <Pagination current={currentPage} total={visibleUsers.length} pageSize={pageSize} onChange={setCurrentPage} />
+                
                 <UserEditModal 
                     isOpen={isEditModalOpen} 
                     onClose={() => setIsEditModalOpen(false)} 
-                    editingUser={editingUser} 
-                    setEditingUser={setEditingUser} 
+                    targetUser={editingUser} 
                     currentUser={user}
-                    users={users}
-                    onSave={savePermissionUser}
+                    onUpdate={reloadData}
                 />
             </div>
             )}

@@ -1,5 +1,5 @@
 
-export type ThemeMode = 'light' | 'dark' | 'prism-light' | 'prism-dark';
+export type ThemeMode = 'light' | 'oled' | 'prism-light' | 'prism-dark';
 
 export enum RoleLevel {
   ROOT = '00',
@@ -37,6 +37,7 @@ export interface User {
   password?: string; // 新增密码字段用于登录验证
   role: RoleLevel;
   avatar?: string;
+  face_descriptor?: number[]; // For face-api.js 128-float array
   storeId?: string; 
   permissions?: UserPermissions;
 }
@@ -58,9 +59,6 @@ export interface Batch {
   expiryDate: string;
   quantityBig: number; 
   quantitySmall: number; 
-  unitBig: string;
-  unitSmall: string;
-  conversionRate: number; 
   price?: number;
   notes?: string;
 }
@@ -74,7 +72,11 @@ export interface Product {
   batches: Batch[];
   image_url?: string;
   notes?: string;
-  keywords?: string[]; 
+  keywords?: string[];
+  // New Fields per Section 23
+  unitBig: string;      // 大单位 (如: 箱)
+  unitSmall: string;    // 小单位 (如: 瓶)
+  conversionRate: number; // 换算制 (如: 10)
 }
 
 export enum LogAction {
@@ -99,24 +101,29 @@ export interface OperationLog {
   role_level: RoleLevel; 
 }
 
-export type AnnouncementFrequency = 'once' | 'daily' | 'monthly' | 'permanent';
+export type AnnouncementFrequency = 'once' | 'daily' | 'weekly' | 'monthly' | 'permanent';
 
 export interface Announcement {
   id: string;
   title: string;
-  content: string;
+  content: string; // HTML supported
   author_id: string;
   author_name: string;
   author_role: RoleLevel;
   created_at: string;
   target_roles: RoleLevel[];
   target_userIds?: string[];
-  read_user_ids: string[]; // Changed from is_read boolean to array of user IDs
+  read_user_ids: string[]; 
   type: 'notice' | 'suggestion';
   popup_config?: {
     enabled: boolean;
     frequency: AnnouncementFrequency;
   };
+  auto_revoke_config?: {
+    enabled: boolean;
+    revoke_date: string; // ISO date string
+  };
+  allow_hide: boolean;
   hidden_by_users?: string[];
 }
 

@@ -2,10 +2,10 @@
 import { RoleLevel, ThemeMode, Product, OperationLog, LogAction, Store, User, LoginRecord, Announcement } from './types';
 
 export const THEMES: { mode: ThemeMode; name: string; bg: string; text: string }[] = [
-  { mode: 'light', name: '浅色模式', bg: '#ffffff', text: '#000000' },
-  { mode: 'dark', name: '深色模式', bg: '#000000', text: '#ffffff' },
-  { mode: 'prism-light', name: '棱镜专属浅色', bg: '#F2F3F7', text: '#3C3836' }, // Ghost White
-  { mode: 'prism-dark', name: '棱镜专属深色', bg: '#1D2021', text: '#EBDBB2' }, // Dark Grey & Oatmeal
+  { mode: 'prism-light', name: '棱镜专属浅色', bg: '#F2F3F7', text: '#3C3836' },
+  { mode: 'prism-dark', name: '棱镜专属深色', bg: '#1D2021', text: '#EBDBB2' },
+  { mode: 'oled', name: '纯黑模式', bg: '#000000', text: '#FFFFFF' },
+  { mode: 'light', name: '纯白模式', bg: '#FFFFFF', text: '#000000' },
 ];
 
 // Empty initial states - Real data will be fetched from Supabase
