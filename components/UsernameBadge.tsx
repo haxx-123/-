@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { RoleLevel } from '../types';
 
@@ -10,22 +11,27 @@ interface UsernameBadgeProps {
 const UsernameBadge: React.FC<UsernameBadgeProps> = ({ name, roleLevel, className = '' }) => {
   const getStyle = (role: RoleLevel) => {
     switch (role) {
-      case RoleLevel.ROOT: // 00 - Hype Purple/Pink/Cyan
-        return 'role-gradient-00 font-bold';
-      case RoleLevel.BOSS: // 01 - Gold
-        return 'role-gradient-01 font-bold';
-      case RoleLevel.FRONT_DESK: // 02 - DeepSkyBlue
-        return 'text-[#00BFFF] font-medium';
+      // 36.3.1 SVIP
+      case RoleLevel.ROOT: // 00
+        return 'role-gradient-00';
+      case RoleLevel.BOSS: // 01
+        return 'role-gradient-01';
+      
+      // 36.3.2 VIP (Solid Colors)
+      case RoleLevel.FRONT_DESK: // 02
+        return 'text-[#00BFFF] font-medium'; // DeepSkyBlue
       case RoleLevel.MANAGER_TEAL: // 03
-        return 'text-teal-600 dark:text-teal-400';
+        return 'text-[#20B2AA] font-medium'; // LightSeaGreen/Teal Variant
       case RoleLevel.MANAGER_OLIVE: // 04
-        return 'text-lime-700 dark:text-lime-500';
-      case RoleLevel.MANAGER_GRAY: // 05
-        return 'text-slate-600 dark:text-slate-400';
-      case RoleLevel.STAFF: // 06-09
-      case RoleLevel.GUEST:
+        return 'text-[#9ACD32] font-medium'; // YellowGreen
+      case RoleLevel.MANAGER_GRAY: // 05 (Actually DarkTurquoise/DarkSlateGray adjusted per spec)
+        return 'text-[#00CED1] font-medium'; // DarkTurquoise (Adjusted for visibility)
+
+      // 36.3.3 Common (Follow Global Variable)
+      case RoleLevel.STAFF: // 06
+      case RoleLevel.GUEST: // 09
       default:
-        return 'text-black dark:text-white';
+        return 'role-text-common'; // Maps to var(--text-primary)
     }
   };
 

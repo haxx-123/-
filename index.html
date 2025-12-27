@@ -1,6 +1,6 @@
 
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="prism-light">
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
@@ -15,18 +15,11 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script>
       tailwind.config = {
-        darkMode: 'class', // We use data-theme strategy mainly, but keep class for legacy compat if needed
+        darkMode: 'class',
         theme: {
           extend: {
             colors: {
-              // Semantic Color Mapping based on CSS Variables
-              primary: 'var(--bg-primary)',
-              paper: 'var(--bg-paper)',
-              main: 'var(--text-primary)',
-              sub: 'var(--text-secondary)',
-              input: 'var(--input-bg)',
-              borderbase: 'var(--border-color)',
-              accent: 'var(--accent-color)',
+              // Extending config to use CSS variables implies reliance on the CSS definitions below
             },
             fontFamily: {
               sans: ['Inter', 'sans-serif'],
@@ -36,31 +29,43 @@
       }
     </script>
     <style>
-      /* 1.2. Define 4 Major Themes */
+      /* 35.2 CSS Variables Mapping */
+      
+      /* Default (Classic Light) 35.2.4 */
       :root {
-        /* Default fallback (Classic Light) */
         --bg-primary: #FFFFFF;
         --bg-paper: #F5F5F5;
         --text-primary: #000000;
-        --text-secondary: #555555;
+        --text-secondary: #504945; /* Inferred from Prism logic as default secondary, or #666 */
         --input-bg: #FAFAFA;
         --border-color: #CCCCCC;
-        --accent-color: #076678;
+        --accent-color: #076678; /* Default accent */
       }
 
-      /* 1.2.1 Prism Light - Ghost White */
-      [data-theme="prism-light"] {
+      /* OLED Black (Pure Black) 35.2.3 */
+      html.dark:not(.theme-prism-dark) {
+        --bg-primary: #000000;
+        --bg-paper: #121212;
+        --text-primary: #FFFFFF;
+        --text-secondary: #A0A0A0;
+        --input-bg: #333333;
+        --border-color: #444444;
+        --accent-color: #D65D0E;
+      }
+
+      /* Prism Light 35.2.1 */
+      html.theme-prism-light {
         --bg-primary: #F2F3F7;
         --bg-paper: #FFFFFF;
         --text-primary: #3C3836;
         --text-secondary: #504945;
-        --input-bg: #FFFFFF; /* Must be brighter than bg */
+        --input-bg: #FFFFFF;
         --border-color: #D5D5D5;
         --accent-color: #076678;
       }
 
-      /* 1.2.2 Prism Deep Dark */
-      [data-theme="prism-dark"] {
+      /* Prism Deep Dark 35.2.2 */
+      html.theme-prism-dark {
         --bg-primary: #1D2021;
         --bg-paper: #282828;
         --text-primary: #EBDBB2;
@@ -70,40 +75,18 @@
         --accent-color: #D65D0E;
       }
 
-      /* 1.2.3 OLED Black */
-      [data-theme="oled"] {
-        --bg-primary: #000000;
-        --bg-paper: #121212;
-        --text-primary: #FFFFFF;
-        --text-secondary: #AAAAAA;
-        --input-bg: #333333;
-        --border-color: #444444;
-        --accent-color: #3b82f6; /* Default Blue for high contrast */
-      }
-
-      /* 1.2.4 Classic Light */
-      [data-theme="light"] {
-        --bg-primary: #FFFFFF;
-        --bg-paper: #F5F5F5;
-        --text-primary: #000000;
-        --text-secondary: #666666;
-        --input-bg: #FAFAFA;
-        --border-color: #CCCCCC;
-        --accent-color: #2563eb;
-      }
-
-      /* Base styles applying variables */
+      /* Base Transition */
       body {
+        transition: background-color 0.3s ease, color 0.3s ease;
         background-color: var(--bg-primary);
         color: var(--text-primary);
-        transition: background-color 0.3s ease, color 0.3s ease;
       }
 
-      /* 1.3 Global Component Overrides */
+      /* 35.3 Global Component Overrides */
       input, textarea, select {
         background-color: var(--input-bg) !important;
+        border-color: var(--border-color) !important;
         color: var(--text-primary) !important;
-        border: 1px solid var(--border-color) !important;
       }
       
       input::placeholder, textarea::placeholder {
@@ -111,14 +94,22 @@
         opacity: 0.7;
       }
 
-      /* Modal / Card / Sidebar Overrides */
-      .bg-paper, .bg-white, .dark\:bg-gray-800, .glass {
-        background-color: var(--bg-paper) !important;
+      /* Force overrides for Tailwind utility classes to respect variables where necessary for themes */
+      .bg-white { background-color: var(--bg-paper) !important; }
+      .dark .bg-gray-800 { background-color: var(--bg-paper) !important; }
+      .dark .bg-gray-900 { background-color: var(--bg-primary) !important; }
+      
+      /* Glassmorphism updates based on variables */
+      .glass {
+        background: var(--bg-paper);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border: 1px solid var(--border-color);
         color: var(--text-primary);
-        border-color: var(--border-color);
+        opacity: 0.95;
       }
 
-      /* Scrollbar */
+      /* Custom Scrollbar */
       ::-webkit-scrollbar {
         width: 6px;
         height: 6px;
@@ -130,15 +121,45 @@
         background: var(--border-color);
         border-radius: 3px;
       }
+      ::-webkit-scrollbar-thumb:hover {
+        background: var(--text-secondary);
+      }
+
+      /* 36.3.1 Role Gradients */
+      /* Level 00: Bright Purple -> Deep Pink -> Cyan */
+      .role-gradient-00 {
+        background: linear-gradient(45deg, #d946ef, #ec4899, #06b6d4);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        font-weight: bold;
+        text-shadow: 0 0 10px rgba(139, 92, 246, 0.3);
+      }
+      /* Level 01: Pure Gold -> Orange -> Bright Yellow */
+      .role-gradient-01 {
+        background: linear-gradient(45deg, #FFD700, #FFA500, #FFFFE0);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        font-weight: bold;
+        text-shadow: 0 0 5px rgba(255, 215, 0, 0.5);
+      }
       
-      /* Specific override for Prism themes to ensure contrast */
-      [data-theme="prism-dark"] .text-gray-500,
-      [data-theme="prism-dark"] .text-gray-400 {
-        color: var(--text-secondary) !important;
+      /* Level 06-09 Text Color Force */
+      .role-text-common {
+        color: var(--text-primary) !important;
       }
 
       /* Splash Screen */
       #splash-screen {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        transition: opacity 0.8s ease-out, visibility 0.8s;
         background-color: var(--bg-primary);
         color: var(--text-primary);
       }
@@ -154,13 +175,13 @@
     "react-router-dom": "https://esm.sh/react-router-dom@^7.11.0",
     "xlsx": "https://esm.sh/xlsx@^0.18.5",
     "lucide-react": "https://esm.sh/lucide-react@^0.561.0",
-    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.39.3"
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.39.3",
+    "browser-image-compression": "https://esm.sh/browser-image-compression@2.0.2"
   }
 }
 </script>
 </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/index.tsx"></script>
   </body>
 </html>

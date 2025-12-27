@@ -1,5 +1,5 @@
 
-export type ThemeMode = 'light' | 'oled' | 'prism-light' | 'prism-dark';
+export type ThemeMode = 'light' | 'dark' | 'prism-light' | 'prism-dark';
 
 export enum RoleLevel {
   ROOT = '00',
@@ -56,11 +56,15 @@ export interface Store {
 export interface Batch {
   id: string;
   batchNumber: string;
-  expiryDate: string;
-  quantityBig: number; 
-  quantitySmall: number; 
+  expiryDate: string | null; // 16.2.2 Allows NULL
+  totalQuantity: number;     // 16.1.1 Core Logic: Total Quantity
+  conversionRate: number;    // 16.1.1 Per Batch Conversion Rate (Key: Independent per batch)
   price?: number;
   notes?: string;
+  // Helpers for display, derived from totalQuantity / conversionRate
+  // No longer source of truth in DB
+  quantityBig?: number;
+  quantitySmall?: number;
 }
 
 export interface Product {
@@ -70,13 +74,15 @@ export interface Product {
   category: string;
   sku: string;
   batches: Batch[];
-  image_url?: string;
+  image_url?: string | null; // 16.2.3 Allow NULL
   notes?: string;
   keywords?: string[];
-  // New Fields per Section 23
+  // New Fields per Section 23 & 16.1.1 (Product Level Static Attributes)
   unitBig: string;      // 大单位 (如: 箱)
   unitSmall: string;    // 小单位 (如: 瓶)
-  conversionRate: number; // 换算制 (如: 10)
+  conversionRate: number; // 默认换算制 (如: 10)
+  quantityBig?: number;
+  quantitySmall?: number;
 }
 
 export enum LogAction {
@@ -93,6 +99,7 @@ export interface OperationLog {
   target_id: string;
   target_name: string;
   change_desc: string;
+  change_delta?: number;
   operator_id: string;
   operator_name: string;
   created_at: string;
