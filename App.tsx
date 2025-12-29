@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, createContext, useContext, Suspense, lazy, useRef } from 'react';
 import { HashRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { 
@@ -80,30 +79,43 @@ const LoadingScreen = () => (
   </div>
 );
 
+// 27. 创建一个悬浮的“安装应用”图标
 const InstallAppFloating = () => {
   const [installPrompt, setInstallPrompt] = useState<any>(null);
   const [showIOSModal, setShowIOSModal] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
-    if (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true) {
+    // Check for Standalone Mode (Installed)
+    // iOS: window.navigator.standalone, Android/Desktop: display-mode: standalone
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+    
+    if (isStandalone) {
+      setIsVisible(false);
       return; 
     }
+
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+
+    // Android/Desktop: Listen for beforeinstallprompt
     const handler = (e: any) => {
       e.preventDefault();
       setInstallPrompt(e);
       setIsVisible(true); 
     };
     window.addEventListener('beforeinstallprompt', handler);
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+
+    // iOS: Always show if not standalone (no beforeinstallprompt event on iOS)
     if (isIOS) {
         setIsVisible(true); 
     }
+
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 
   const handleInstallClick = () => {
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+    
     if (isIOS) {
       setShowIOSModal(true);
     } else if (installPrompt) {
@@ -115,6 +127,7 @@ const InstallAppFloating = () => {
         }
       });
     } else {
+        // Fallback or Instructions
         alert("请尝试点击浏览器菜单中的“安装应用”或“添加到主屏幕”");
     }
   };
@@ -123,33 +136,48 @@ const InstallAppFloating = () => {
 
   return (
     <>
-      <div className="fixed top-20 right-4 z-30 pointer-events-none">
+      {/* Parent Container with pointer-events: none to avoid blocking clicks underneath */}
+      <div className="fixed top-24 right-4 z-50 pointer-events-none flex flex-col items-end gap-2">
         <motion.button 
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
             onClick={handleInstallClick}
-            className="p-3 bg-blue-600 text-white rounded-full shadow-xl shadow-blue-600/40 hover:bg-blue-700 transition-colors animate-bounce-slow pointer-events-auto"
+            // Button itself must have pointer-events: auto
+            className="pointer-events-auto p-3 bg-blue-600 text-white rounded-full shadow-xl shadow-blue-600/40 hover:bg-blue-700 transition-colors animate-bounce-slow"
             title="安装应用"
         >
             <Download className="w-6 h-6" />
         </motion.button>
       </div>
-      {showIOSModal && (
-        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black bg-opacity-60 backdrop-blur-sm p-4" onClick={() => setShowIOSModal(false)}>
-           <div className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative animate-slide-up" onClick={e => e.stopPropagation()}>
-              <button onClick={() => setShowIOSModal(false)} className="absolute top-4 right-4 text-gray-400"><X className="w-5 h-5"/></button>
-              <div className="flex flex-col items-center text-center">
-                 <img src={APP_LOGO_URL} alt="App Icon" className="w-16 h-16 rounded-2xl mb-4 shadow-lg" />
-                 <h3 className="text-lg font-bold mb-2 dark:text-white">安装到 iPhone/iPad</h3>
-                 <p className="text-sm text-gray-500 mb-6 leading-relaxed">
-                    请点击浏览器底部的 <span className="font-bold text-blue-600 inline-flex items-center mx-1"><Share className="w-4 h-4"/></span> 按钮<br/>
-                    然后选择 <span className="font-bold text-gray-800 dark:text-gray-200">“添加到主屏幕”</span>
-                 </p>
-                 <button onClick={() => setShowIOSModal(false)} className="text-blue-600 font-bold">知道了</button>
-              </div>
-           </div>
-        </div>
-      )}
+
+      {/* iOS Installation Instructions Modal */}
+      <AnimatePresence>
+        {showIOSModal && (
+          <div 
+            className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black bg-opacity-60 backdrop-blur-sm p-4" 
+            onClick={() => setShowIOSModal(false)}
+          >
+             <motion.div 
+               initial={{ y: 100, opacity: 0 }}
+               animate={{ y: 0, opacity: 1 }}
+               exit={{ y: 100, opacity: 0 }}
+               className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative" 
+               onClick={e => e.stopPropagation()}
+             >
+                <button onClick={() => setShowIOSModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><X className="w-5 h-5"/></button>
+                <div className="flex flex-col items-center text-center">
+                   <img src={APP_LOGO_URL} alt="App Icon" className="w-16 h-16 rounded-2xl mb-4 shadow-lg" />
+                   <h3 className="text-lg font-bold mb-2 dark:text-white">安装到 iPhone/iPad</h3>
+                   <p className="text-sm text-gray-500 mb-6 leading-relaxed dark:text-gray-400">
+                      1. 点击浏览器底部的 <span className="font-bold text-blue-600 inline-flex items-center mx-1"><Share className="w-4 h-4"/></span> 分享按钮<br/>
+                      2. 在菜单中选择 <span className="font-bold text-gray-800 dark:text-gray-200">“添加到主屏幕”</span>
+                   </p>
+                   <button onClick={() => setShowIOSModal(false)} className="w-full py-3 bg-gray-100 dark:bg-gray-700 rounded-xl font-bold text-blue-600 dark:text-blue-400">知道了</button>
+                </div>
+             </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </>
   );
 };
@@ -578,28 +606,14 @@ const AppContent = () => {
   useEffect(() => {
     const root = window.document.documentElement;
     root.classList.remove('dark', 'theme-prism-light', 'theme-prism-dark');
-    
-    // Clear inline style to let CSS vars take over, or set to match CSS vars
     root.style.removeProperty('background-color');
 
-    if (theme === 'dark') { 
-        root.classList.add('dark'); 
-        // 35.2.3 Pure Black
-        // CSS var --bg-primary handles #000000, but legacy might need this
-        // We will rely on CSS vars in index.html, but keeping this for safety if Tailwind config needs it
-    }
+    if (theme === 'dark') { root.classList.add('dark'); }
     else if (theme === 'prism-light') { root.classList.add('theme-prism-light'); }
     else if (theme === 'prism-dark') { root.classList.add('dark', 'theme-prism-dark'); }
-    else { 
-        // Light (Classic)
-        // Default CSS vars handle this
-    }
   }, [theme]);
 
-  // Popup logic... (omitted for brevity as no change requested here, logic preserved by full copy if file was requested)
-  // ... (rest of the file content identical to previous state)
-  
-  // Re-inserting full popup logic to ensure valid XML
+  // Popup logic
   useEffect(() => {
     if (user && appReady && announcements.length > 0) {
         const today = new Date().toDateString();
