@@ -1,14 +1,11 @@
-
-self.addEventListener('install', (event) => {
-  console.log('Service Worker installing.');
+self.addEventListener('install', (e) => {
   self.skipWaiting();
 });
 
-self.addEventListener('activate', (event) => {
-  console.log('Service Worker activating.');
+self.addEventListener('activate', (e) => {
+  return self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {
   // Simple pass-through fetch
-  event.respondWith(fetch(event.request));
 });

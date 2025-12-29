@@ -6,13 +6,13 @@
       "src": "https://i.ibb.co/93cvPv7p/maskable-icon-x192.png",
       "type": "image/png",
       "sizes": "192x192",
-      "purpose": "maskable"
+      "purpose": "maskable any"
     },
     {
       "src": "https://i.ibb.co/HLWPZQNX/maskable-icon-x512.png",
       "type": "image/png",
       "sizes": "512x512",
-      "purpose": "maskable"
+      "purpose": "maskable any"
     }
   ],
   "start_url": ".",
