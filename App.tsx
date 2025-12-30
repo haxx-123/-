@@ -142,51 +142,48 @@ const InstallAppFloating = () => {
     const isInApp = /MicroMessenger|DingTalk/i.test(ua);
     const isMobile = /Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua);
 
-    // State Check Function
-    const checkState = () => {
-        // Priority 1: Native Prompt Available (Desktop or Mobile)
+    // Initial State Check
+    const init = () => {
+        // Priority 1: Native Prompt Available (Global Check)
         if (window.deferredPrompt) {
+            console.log('[Install] Found deferredPrompt on mount');
             setInstallMode('native');
             return;
         }
+        
         // Priority 2: In-App Browser
         if (isInApp) {
             setInstallMode('in-app');
             return;
         }
+
         // Priority 3: iOS
         if (isIOS) {
             setInstallMode('ios');
             return;
         }
-        // Priority 4: Android/Mobile Manual Fallback (Only if native prompt hasn't fired yet)
+
+        // Priority 4: Android/Mobile Fallback (Manual Guide)
+        // Note: If native prompt comes later, event listener will override this.
         if (isMobile) {
             setInstallMode('generic');
             return;
         }
-        // Priority 5: Desktop Default -> Hidden (until native prompt fires)
+
+        // Priority 5: Desktop Default -> Hidden (Wait for event)
         setInstallMode('hidden');
     };
 
-    // Initial Run
-    checkState();
+    init();
 
-    // Event Listener: Capture native prompt
-    const handlePrompt = (e: any) => {
-        e.preventDefault();
-        window.deferredPrompt = e;
-        console.log('[Component] Native prompt captured');
-        checkState();
+    // Event Listener: Listen for the CUSTOM event dispatched by index.tsx
+    // This fixes the race condition where index.tsx captures it before this component mounts.
+    const handlePWALoaded = () => {
+        console.log('[Install] Received pwa-install-ready event');
+        setInstallMode('native');
     };
-    window.addEventListener('beforeinstallprompt', handlePrompt);
 
-    // Polling: Check global variable every 1s (Fix for race conditions)
-    const timer = setInterval(() => {
-        if (window.deferredPrompt && installMode !== 'native') {
-            console.log('[Polling] Found deferredPrompt, enabling native install');
-            checkState();
-        }
-    }, 1000);
+    window.addEventListener('pwa-install-ready', handlePWALoaded);
 
     // Cleanup: App Installed
     const handleAppInstalled = () => {
@@ -196,37 +193,39 @@ const InstallAppFloating = () => {
     window.addEventListener('appinstalled', handleAppInstalled);
 
     return () => {
-        window.removeEventListener('beforeinstallprompt', handlePrompt);
+        window.removeEventListener('pwa-install-ready', handlePWALoaded);
         window.removeEventListener('appinstalled', handleAppInstalled);
-        clearInterval(timer);
     };
-  }, [installMode]);
+  }, []);
 
   const handleClick = async () => {
-      // Native Installation (Highest Priority)
-      // Directly access the global variable to ensure we have the latest obj
+      // Logic Fix: Always prioritize Native Prompt if available, regardless of current 'installMode' visual state
       if (window.deferredPrompt) {
           try {
+            console.log('[Install] Triggering native prompt');
             await window.deferredPrompt.prompt();
             const { outcome } = await window.deferredPrompt.userChoice;
-            console.log(`Install prompt outcome: ${outcome}`);
+            console.log(`[Install] Outcome: ${outcome}`);
             if (outcome === 'accepted') {
                 setInstallMode('hidden');
             }
-            // Chrome only allows prompt() once per event, but we keep checking in case it was dismissed
+            // Clear it
             window.deferredPrompt = null; 
           } catch (e) {
-            console.error("Install prompt failed", e);
+            console.error("[Install] Prompt failed", e);
           }
           return;
       }
 
-      // Fallbacks
+      // Fallbacks if no native prompt
       switch (installMode) {
           case 'ios': setShowIOSModal(true); break;
           case 'in-app': setShowInAppOverlay(true); break;
           case 'generic': setShowGenericModal(true); break;
-          default: break;
+          default: 
+            // If hidden or native (but no prompt obj), show generic as last resort
+            if(installMode !== 'hidden') setShowGenericModal(true);
+            break;
       }
   };
 
@@ -245,7 +244,7 @@ const InstallAppFloating = () => {
             whileTap={{ scale: 0.9 }}
             onClick={handleClick}
             className="pointer-events-auto p-0 rounded-2xl shadow-xl shadow-blue-500/30 overflow-hidden border-2 border-white/20"
-            title="安装应用"
+            title={installMode === 'native' ? "点击安装" : "添加到主屏幕"}
          >
             <img src={LOGO_URL} alt="Install" className={`object-cover ${installMode === 'generic' || installMode === 'ios' ? 'w-10 h-10' : 'w-12 h-12'}`} />
          </motion.button>

@@ -14,7 +14,12 @@ window.addEventListener('beforeinstallprompt', (e) => {
   // 2. Stash the event so it can be triggered later.
   // @ts-ignore
   window.deferredPrompt = e;
-  console.log('[Global] PWA install prompt event captured!');
+  
+  // 3. 【核心修复】广播自定义事件，通知 React 组件更新状态
+  // 解决了组件加载晚于事件触发导致的状态不同步问题
+  window.dispatchEvent(new Event('pwa-install-ready'));
+  
+  console.log('[Global] PWA install prompt event captured & broadcasted!');
 });
 // --- 关键新增代码 END ---
 
