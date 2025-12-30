@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, createContext, useContext, Suspense, lazy, useRef } from 'react';
 import { HashRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { 
@@ -74,117 +75,130 @@ export const useApp = () => {
   return context;
 };
 
-// ... (LoadingScreen, InstallAppFloating, Navbar, Sidebar, ModalContainer, PageWrapper, MainLayout remain identical) ...
+// ... (LoadingScreen remains identical) ...
 const LoadingScreen = () => (
   <div className="flex items-center justify-center h-full w-full min-h-[50vh]">
     <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
   </div>
 );
 
+// --- Updated InstallAppFloating Component (DEBUGGING MODE) ---
 const InstallAppFloating = () => {
-  const [supportsPWA, setSupportsPWA] = useState(false);
-  const [promptInstall, setPromptInstall] = useState<any>(null);
+  const [isVisible, setIsVisible] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
-  const [showIOSInstruction, setShowIOSInstruction] = useState(false);
+  const [showIOSModal, setShowIOSModal] = useState(false);
+  const deferredPrompt = useRef<any>(null);
 
   useEffect(() => {
-    // 1. 核心检查：如果应用已经是在 "standalone" (App模式) 下运行，直接销毁组件，绝不显示
+    // Debug info
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+    const checkIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    
+    console.log("[InstallApp Debug] Init:", {
+        isStandalone,
+        checkIOS,
+        userAgent: navigator.userAgent,
+        deferredPrompt: deferredPrompt.current
+    });
+
     if (isStandalone) {
-      return; 
+      console.log("[InstallApp Debug] App is standalone (installed)");
+      setIsVisible(false);
+      // return; // Removed for debug force render
     }
 
-    // 2. 检测设备类型
-    const userAgent = window.navigator.userAgent.toLowerCase();
-    const isIosDevice = /iphone|ipad|ipod/.test(userAgent);
-    setIsIOS(isIosDevice);
+    setIsIOS(checkIOS);
+    if (checkIOS) {
+        console.log("[InstallApp Debug] iOS detected");
+        setIsVisible(true);
+    }
 
-    // 3. Android/PC 逻辑：监听安装事件
-    const handler = (e: any) => {
-      e.preventDefault();
-      setPromptInstall(e);
-      setSupportsPWA(true); // 只有捕捉到事件才显示按钮
+    const handleBeforeInstallPrompt = (e: any) => {
+      console.log("[InstallApp Debug] beforeinstallprompt fired");
+      e.preventDefault(); 
+      deferredPrompt.current = e;
+      setIsVisible(true);
     };
-    window.addEventListener('beforeinstallprompt', handler);
 
-    // 4. iOS 逻辑：iOS 不会触发 beforeinstallprompt，所以默认显示（前提是没安装）
-    if (isIosDevice) {
-      setSupportsPWA(true);
-    }
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
 
-    return () => window.removeEventListener('beforeinstallprompt', handler);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
   }, []);
 
-  // 点击安装按钮的处理逻辑
-  const handleInstallClick = async () => {
+  const handleClick = () => {
+    console.log("[InstallApp Debug] Clicked. isIOS:", isIOS, "Prompt available:", !!deferredPrompt.current);
     if (isIOS) {
-      // iOS: 弹出模态框指导
-      setShowIOSInstruction(true);
+      setShowIOSModal(true);
+    } else if (deferredPrompt.current) {
+      deferredPrompt.current.prompt();
+      deferredPrompt.current.userChoice.then((choiceResult: any) => {
+        if (choiceResult.outcome === 'accepted') {
+          console.log('[InstallApp Debug] User accepted the A2HS prompt');
+          setIsVisible(false); 
+        } else {
+          console.log('[InstallApp Debug] User dismissed the A2HS prompt');
+        }
+        deferredPrompt.current = null;
+      });
     } else {
-      // Android/PC: 触发原生弹窗
-      if (!promptInstall) return;
-      promptInstall.prompt();
-      const { outcome } = await promptInstall.userChoice;
-      if (outcome === 'accepted') {
-        setSupportsPWA(false); // 安装后隐藏按钮
-      }
+        alert("调试信息：无安装事件捕获，请检查控制台日志。");
     }
   };
 
-  if (!supportsPWA) return null;
+  // DEBUG: Force render regardless of isVisible state
+  // if (!isVisible) return null; 
 
   return (
     <>
-      {/* 悬浮按钮容器 
-         关键 CSS: pointer-events-none 确保透明区域不挡点击
-         z-index: 40 确保不挡住 z-50 的侧边栏或模态框
+      {/* 
+         DEBUG MODE: z-index set to 100
       */}
-      <div className="fixed inset-0 pointer-events-none z-40 flex justify-end items-start p-4 mt-16 sm:mt-4">
-        <button
-          onClick={handleInstallClick}
-          className="pointer-events-auto bg-blue-600 hover:bg-blue-700 text-white shadow-lg rounded-full px-4 py-2 flex items-center gap-2 transition-all duration-300 transform hover:scale-105 active:scale-95 backdrop-blur-sm bg-opacity-90"
-          style={{ boxShadow: '0 4px 14px 0 rgba(0, 118, 255, 0.39)' }}
-        >
-          <Download size={18} />
-          <span className="text-sm font-medium">安装应用</span>
-        </button>
+      <div className="fixed top-20 right-4 z-[100] pointer-events-none flex flex-col items-end gap-2 animate-bounce-slow">
+         <motion.button
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={handleClick}
+            className="pointer-events-auto p-3 bg-gradient-to-br from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-full shadow-xl shadow-blue-500/30 flex items-center justify-center transition-all border-2 border-white/20"
+            title="安装应用"
+         >
+            <Download className="w-5 h-5" />
+         </motion.button>
+         <div className="bg-black/60 backdrop-blur-md text-white text-[10px] font-bold px-2 py-1 rounded-md pointer-events-none shadow-sm">
+             安装APP (Debug)
+         </div>
+         {/* Debug Status Display */}
+         <div className="bg-red-500/80 text-white text-[8px] px-1 rounded pointer-events-none">
+             IOS:{isIOS?'Y':'N'} Vis:{isVisible?'Y':'N'}
+         </div>
       </div>
 
-      {/* iOS 指引模态框 (Modal) */}
-      {showIOSInstruction && (
-        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative">
-            <button 
-              onClick={() => setShowIOSInstruction(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-            >
-              <X size={24} />
-            </button>
-            
-            <div className="text-center space-y-4">
-              <img 
-                src="https://i.ibb.co/93cvPv7p/maskable-icon-x192.png" 
-                className="w-16 h-16 rounded-xl mx-auto shadow-md"
-                alt="Logo"
-              />
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                安装“棱镜-StockWise”
-              </h3>
-              <p className="text-sm text-gray-600 dark:text-gray-300 text-left bg-gray-50 dark:bg-gray-700/50 p-4 rounded-xl">
-                iOS 系统限制，请手动添加：<br/>
-                1. 点击底部工具栏的 <Share className="inline w-4 h-4 mx-1" /> <strong>分享按钮</strong><br/>
-                2. 向下滑动选择 <span className="font-bold">"添加到主屏幕"</span>
-              </p>
-            </div>
-            
-            <div className="mt-6 w-full h-0.5 bg-gray-100 dark:bg-gray-700"></div>
-            <button 
-              onClick={() => setShowIOSInstruction(false)}
-              className="w-full mt-4 py-2 text-blue-600 font-semibold"
-            >
-              知道了
-            </button>
-          </div>
+      {/* iOS Modal */}
+      {showIOSModal && (
+        <div 
+            className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in"
+            onClick={() => setShowIOSModal(false)}
+        >
+           <div 
+             className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative animate-slide-up border border-gray-100 dark:border-gray-700"
+             onClick={e => e.stopPropagation()}
+           >
+              <button onClick={() => setShowIOSModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 bg-gray-100 dark:bg-gray-700 rounded-full p-1"><X className="w-4 h-4"/></button>
+              <div className="flex flex-col items-center text-center">
+                 <img src={APP_LOGO_URL} alt="App Icon" className="w-16 h-16 rounded-2xl mb-4 shadow-lg border border-gray-100 dark:border-gray-600" />
+                 <h3 className="text-lg font-bold mb-2 dark:text-white">安装到主屏幕</h3>
+                 <p className="text-sm text-gray-500 mb-6 leading-relaxed">
+                    为了获得最佳的全屏体验，请：<br/>
+                    1. 点击底部工具栏的 <span className="font-bold text-blue-600 inline-flex items-center mx-1"><Share className="w-4 h-4"/></span> 分享按钮<br/>
+                    2. 在菜单中选择 <span className="font-bold text-gray-800 dark:text-gray-200">“添加到主屏幕”</span>
+                 </p>
+                 <button onClick={() => setShowIOSModal(false)} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30">知道了</button>
+              </div>
+              <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 w-4 h-4 bg-white dark:bg-gray-800 rotate-45 sm:hidden"></div>
+           </div>
         </div>
       )}
     </>
@@ -276,9 +290,6 @@ const Navbar = () => {
 
   const ActionButtons = () => (
     <>
-        <motion.button whileTap={{ scale: 0.9 }} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700" title="安装应用">
-            <Download className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-        </motion.button>
         <motion.button whileTap={{ scale: 0.9 }} onClick={() => setAnnouncementsOpen(true)} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 relative" title="公告">
             <Bell className="w-5 h-5 text-gray-600 dark:text-gray-300" />
             {hasRedDot && <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}
@@ -341,7 +352,7 @@ const Sidebar = () => {
         </div>
         <div className="p-4">
           <button onClick={() => setStoreManagerOpen(true)} disabled={user?.permissions?.hideStoreEdit} className={`w-full py-2 px-4 mb-4 bg-gray-100 dark:bg-gray-800 rounded-xl flex items-center justify-between transition-colors ${user?.permissions?.hideStoreEdit ? 'opacity-50 cursor-not-allowed hidden' : 'hover:bg-gray-200 dark:hover:bg-gray-700'}`}>
-            <span className="font-medium dark:text-gray-200 truncate pr-2">当前为{currentStore.name}{currentStore.isParent ? '(母)' : '(子)'}</span>
+            <span className="font-medium dark:text-gray-200 truncate pr-2">当前为{currentStore.name}门店{currentStore.isParent ? '(母)' : '(子)'}</span>
             <RefreshCw className="w-4 h-4 text-gray-500 flex-shrink-0" />
           </button>
           {user?.permissions?.hideStoreEdit && <div className="w-full py-2 px-4 mb-4 bg-gray-50 dark:bg-gray-900 rounded-xl flex items-center justify-between border dark:border-gray-700"><span className="font-medium dark:text-gray-400 truncate text-sm">{currentStore.name}{currentStore.isParent ? '(母)' : '(子)'}</span></div>}
@@ -635,6 +646,9 @@ const AppContent = () => {
     }
   }, [theme]);
 
+  // Popup logic... (omitted for brevity as no change requested here, logic preserved by full copy if file was requested)
+  // ... (rest of the file content identical to previous state)
+  
   // Re-inserting full popup logic to ensure valid XML
   useEffect(() => {
     if (user && appReady && announcements.length > 0) {
