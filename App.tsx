@@ -83,63 +83,68 @@ const LoadingScreen = () => (
   </div>
 );
 
-// --- Updated InstallAppFloating Component (With Manual Guide) ---
+// --- Updated InstallAppFloating Component ---
 const InstallAppFloating = () => {
-  const [isStandalone, setIsStandalone] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isIOS, setIsIOS] = useState(false);
   const [showIOSModal, setShowIOSModal] = useState(false);
-  const [showManualModal, setShowManualModal] = useState(false); // For Android/PC manual install
-  const [installEvent, setInstallEvent] = useState<any>(null);
 
   useEffect(() => {
-    // 1. Check Standalone
-    const checkStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
-    setIsStandalone(checkStandalone);
-
-    // 2. Check iOS
-    const checkIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    setIsIOS(checkIOS);
-
-    // 3. Check for Global Deferred Prompt (Immediate)
-    if (window.deferredPrompt) {
-        console.log("[InstallApp] Found global deferredPrompt");
-        setInstallEvent(window.deferredPrompt);
+    // 1. Check if already installed (Standalone Mode)
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+    if (isStandalone) {
+        setIsVisible(false);
+        return;
     }
 
-    // 4. Listen for future events
+    // 2. Check iOS
+    const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    setIsIOS(ios);
+    if (ios) {
+        // iOS doesn't support prompt(), so we show instructions manually if not installed
+        setIsVisible(true);
+    }
+
+    // 3. Listen for 'beforeinstallprompt' (Android/Desktop)
     const handleBeforeInstallPrompt = (e: any) => {
-      console.log("[InstallApp] captured event in component listener");
-      e.preventDefault(); 
-      setInstallEvent(e);
-      window.deferredPrompt = e;
+      e.preventDefault(); // Prevent automatic mini-infobar
+      setDeferredPrompt(e);
+      window.deferredPrompt = e; // Sync global
+      setIsVisible(true); // Show button now that we have the event
+      console.log("[InstallApp] Event captured");
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    // Check if event was already captured globally before mount
+    if (window.deferredPrompt) {
+        setDeferredPrompt(window.deferredPrompt);
+        setIsVisible(true);
+    }
+
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     };
   }, []);
 
   const handleClick = () => {
-    if (installEvent) {
-      installEvent.prompt();
-      installEvent.userChoice.then((choiceResult: any) => {
+    if (isIOS) {
+      setShowIOSModal(true);
+    } else if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then((choiceResult: any) => {
         if (choiceResult.outcome === 'accepted') {
-          console.log('[InstallApp] User accepted the A2HS prompt');
+          console.log('[InstallApp] User accepted');
+          setIsVisible(false); // Hide button after acceptance
         }
-        setInstallEvent(null);
+        setDeferredPrompt(null);
         window.deferredPrompt = null;
       });
-    } else if (isIOS) {
-      setShowIOSModal(true);
-    } else {
-      // No event captured yet (common in Chrome until user interacts or if heuristics aren't met)
-      // Show manual instructions
-      setShowManualModal(true);
     }
   };
 
-  if (isStandalone) return null;
+  if (!isVisible) return null;
 
   return (
     <>
@@ -173,7 +178,7 @@ const InstallAppFloating = () => {
               <button onClick={() => setShowIOSModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 bg-gray-100 dark:bg-gray-700 rounded-full p-1"><X className="w-4 h-4"/></button>
               <div className="flex flex-col items-center text-center">
                  <img src={APP_LOGO_URL} alt="App Icon" className="w-16 h-16 rounded-2xl mb-4 shadow-lg border border-gray-100 dark:border-gray-600" />
-                 <h3 className="text-lg font-bold mb-2 dark:text-white">安装到 iOS 主屏幕</h3>
+                 <h3 className="text-lg font-bold mb-2 dark:text-white">安装“棱镜”到主屏幕</h3>
                  <p className="text-sm text-gray-500 mb-6 leading-relaxed">
                     1. 点击底部工具栏的 <span className="font-bold text-blue-600 inline-flex items-center mx-1"><Share className="w-4 h-4"/></span> 分享按钮<br/>
                     2. 在菜单中选择 <span className="font-bold text-gray-800 dark:text-gray-200">“添加到主屏幕”</span>
@@ -181,46 +186,6 @@ const InstallAppFloating = () => {
                  <button onClick={() => setShowIOSModal(false)} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30">知道了</button>
               </div>
               <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 w-4 h-4 bg-white dark:bg-gray-800 rotate-45 sm:hidden"></div>
-           </div>
-        </div>
-      )}
-
-      {/* Manual Install Modal (Android/PC Fallback) */}
-      {showManualModal && (
-        <div 
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in"
-            onClick={() => setShowManualModal(false)}
-        >
-           <div 
-             className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative animate-scale-in border border-gray-100 dark:border-gray-700"
-             onClick={e => e.stopPropagation()}
-           >
-              <button onClick={() => setShowManualModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 bg-gray-100 dark:bg-gray-700 rounded-full p-1"><X className="w-4 h-4"/></button>
-              <div className="flex flex-col items-center text-center">
-                 <img src={APP_LOGO_URL} alt="App Icon" className="w-16 h-16 rounded-2xl mb-4 shadow-lg border border-gray-100 dark:border-gray-600" />
-                 <h3 className="text-lg font-bold mb-2 dark:text-white">安装到设备</h3>
-                 <p className="text-xs text-gray-400 mb-4">自动安装暂时不可用，请手动安装：</p>
-                 
-                 <div className="text-left w-full bg-gray-50 dark:bg-gray-700/50 p-4 rounded-xl mb-6 space-y-3">
-                    <div className="flex items-start gap-3">
-                        <Laptop className="w-5 h-5 text-blue-500 mt-0.5 shrink-0" />
-                        <div>
-                            <p className="font-bold text-sm text-gray-800 dark:text-gray-200">电脑端 (Chrome/Edge)</p>
-                            <p className="text-xs text-gray-500">点击浏览器地址栏右侧的 <Download className="w-3 h-3 inline"/> 安装图标，或右上角菜单中的“安装 StockWise”。</p>
-                        </div>
-                    </div>
-                    <div className="h-px bg-gray-200 dark:bg-gray-600 w-full"></div>
-                    <div className="flex items-start gap-3">
-                        <Smartphone className="w-5 h-5 text-green-500 mt-0.5 shrink-0" />
-                        <div>
-                            <p className="font-bold text-sm text-gray-800 dark:text-gray-200">安卓端 (Chrome)</p>
-                            <p className="text-xs text-gray-500">点击浏览器右上角 <MoreVertical className="w-3 h-3 inline"/> 菜单，选择“安装应用”或“添加到主屏幕”。</p>
-                        </div>
-                    </div>
-                 </div>
-
-                 <button onClick={() => setShowManualModal(false)} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30">知道了</button>
-              </div>
            </div>
         </div>
       )}
@@ -370,7 +335,7 @@ const Sidebar = () => {
       <div id="app-sidebar" className={sidebarClass}>
         <div className="h-16 flex items-center px-6 border-b dark:border-gray-700">
            <img src={APP_LOGO_URL} alt="Prism" className="w-8 h-8 rounded-lg mr-3 shadow-md" />
-           <span className="text-xl font-bold dark:text-white">棱镜 StockWise</span>
+           <span className="text-xl font-bold dark:text-white">棱镜</span>
            <button onClick={toggleSidebar} className="ml-auto lg:hidden"><X className="w-5 h-5" /></button>
         </div>
         <div className="p-4">
@@ -469,8 +434,8 @@ const Login = () => {
       <div className="w-full max-w-md bg-white dark:bg-gray-800 p-8 rounded-3xl shadow-xl">
         <div className="text-center mb-8">
            <img src={APP_LOGO_URL} alt="Logo" className="w-20 h-20 mx-auto mb-4 rounded-2xl shadow-lg" />
-           <h1 className="text-2xl font-bold text-gray-800 dark:text-white">棱镜 StockWise</h1>
-           <p className="text-gray-500 mt-2">智能库管系统</p>
+           <h1 className="text-2xl font-bold text-gray-800 dark:text-white">棱镜</h1>
+           <p className="text-gray-500 mt-2">StockWise-智能库管系统</p>
         </div>
         <div className="space-y-4">
           <input type="text" value={inputName} onChange={e => setInputName(e.target.value)} className="w-full px-4 py-3 rounded-xl border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="用户名 (如: 管理员)" />

@@ -1,6 +1,6 @@
 {
-  "short_name": "棱镜-StockWise",
-  "name": "棱镜-StockWise",
+  "short_name": "棱镜",
+  "name": "棱镜",
   "id": "/",
   "icons": [
     {
@@ -21,13 +21,13 @@
       "src": "https://i.ibb.co/vxq7QfYd/retouch-2025121423241826.png",
       "type": "image/png",
       "form_factor": "narrow",
-      "label": "StockWise Mobile View"
+      "label": "Mobile View"
     },
     {
       "src": "https://i.ibb.co/vxq7QfYd/retouch-2025121423241826.png",
       "type": "image/png",
       "form_factor": "wide",
-      "label": "StockWise Desktop View"
+      "label": "Desktop View"
     }
   ],
   "start_url": "/",
