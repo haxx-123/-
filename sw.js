@@ -20,7 +20,7 @@ self.addEventListener('install', (event) => {
     );
 });
 
-// Activate: Cleanup old caches
+// Activate: Cleanup old caches & Claim Clients
 self.addEventListener('activate', (event) => {
     console.log('[SW] Activating v9...');
     event.waitUntil(clients.claim());

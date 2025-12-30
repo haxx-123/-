@@ -93,7 +93,8 @@ const SWUpdateToast = () => {
             navigator.serviceWorker.getRegistration().then(reg => {
                 if (reg) {
                     setWb(reg);
-                    if (reg.waiting) setShow(true); // Waiting state detection
+                    // Check if waiting
+                    if (reg.waiting) setShow(true);
                     
                     reg.addEventListener('updatefound', () => {
                         const newWorker = reg.installing;
@@ -108,7 +109,6 @@ const SWUpdateToast = () => {
                 }
             });
 
-            // Reload when controller changes
             let refreshing = false;
             navigator.serviceWorker.addEventListener('controllerchange', () => {
                 if (!refreshing) {
@@ -143,74 +143,69 @@ const SWUpdateToast = () => {
     );
 };
 
-// --- 27. InstallAppFloating (Revised Strict Logic) ---
+// --- 27. InstallAppFloating (Cross-Platform Compatible) ---
 const InstallAppFloating = () => {
-  // Scenario State: 'hidden' | 'native' | 'ios' | 'in-app' | 'generic'
-  const [installMode, setInstallMode] = useState<string>('hidden');
+  const [installMode, setInstallMode] = useState<'hidden' | 'native' | 'ios' | 'in-app' | 'generic'>('hidden');
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   
-  // UI Modal States
+  // UI States
   const [showIOSModal, setShowIOSModal] = useState(false);
   const [showGenericModal, setShowGenericModal] = useState(false);
   const [showInAppOverlay, setShowInAppOverlay] = useState(false);
 
   useEffect(() => {
-    // 1. HIGHEST PRIORITY CHECK: Is App Installed/Standalone?
-    // If true, we forcefully keep 'hidden' and RETURN immediately.
-    // This blocks any subsequent logic from showing the button.
+    // 27.2.1 Scenario A: Standalone / Already Installed Check (Highest Priority)
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
-                         (window.navigator as any).standalone === true;
-    
+                         (window.navigator as any).standalone === true ||
+                         window.location.search.includes('source=pwa');
+                         
     if (isStandalone) {
         setInstallMode('hidden');
-        return; // CRITICAL: Stop execution here.
+        return; // BLOCK EXECUTION
     }
 
-    // --- Only proceed if NOT standalone ---
-
     const ua = navigator.userAgent;
-    const isMobile = /Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua);
-    const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-
-    // 2. Scenario B: In-App Browser (WeChat/DingTalk)
+    
+    // 27.2.2 Scenario B: In-App Browser
     if (/MicroMessenger|DingTalk/i.test(ua)) {
         setInstallMode('in-app');
         return;
     }
 
-    // 3. Scenario D: iOS
+    // 27.2.4 Scenario D: iOS
+    const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     if (isIOS) {
         setInstallMode('ios');
         return;
     }
 
-    // 4. Default State based on device type
-    // Mobile -> Generic Instructions (Scenario E) initially
-    // Desktop -> Hidden (Scenario F) initially
+    // 27.2.3 Scenario C: Native Support
+    // We start with 'hidden' for Desktop or 'generic' for Mobile, then upgrade to 'native' if event fires.
+    const isMobile = /Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+    
     if (isMobile) {
-        setInstallMode('generic');
+        setInstallMode('generic'); // 27.2.5 Scenario E default
     } else {
-        setInstallMode('hidden');
+        setInstallMode('hidden'); // 27.2.6 Scenario F default
     }
 
-    // 5. Scenario C: Native Support (Chrome/Edge/Android)
-    // This event listener allows upgrading from 'generic'/'hidden' to 'native' if the browser supports it.
+    // Capture Event
     const handleBeforeInstallPrompt = (e: any) => {
-        e.preventDefault(); // Prevent mini-infobar
+        e.preventDefault();
         setDeferredPrompt(e);
-        setInstallMode('native'); // Upgrade to native mode
+        setInstallMode('native'); // Upgrade to Native
         console.log('[Install] Native prompt captured');
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     
-    // Check global stash (in case event fired before mount)
+    // Check global stash (from index.tsx)
     if (window.deferredPrompt) {
         setDeferredPrompt(window.deferredPrompt);
         setInstallMode('native');
     }
 
-    // Cleanup on successful install
+    // Cleanup listener
     const handleAppInstalled = () => {
         setInstallMode('hidden');
         alert("安装成功！即将启动...");
@@ -243,6 +238,8 @@ const InstallAppFloating = () => {
           case 'generic':
               setShowGenericModal(true);
               break;
+          default:
+              break;
       }
   };
 
@@ -250,7 +247,7 @@ const InstallAppFloating = () => {
 
   return (
     <>
-      {/* 27.1.3 UI Structure: Fixed, Z-40, Pointer-Events Logic */}
+      {/* 27.1.3 Container Z-Index 40, pointer-events-none */}
       <div className="fixed top-20 right-4 z-40 pointer-events-none flex flex-col items-end gap-2 animate-bounce-slow">
          <motion.button
             initial={{ scale: 0 }}
@@ -258,10 +255,10 @@ const InstallAppFloating = () => {
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
             onClick={handleClick}
-            className="pointer-events-auto p-0 rounded-2xl shadow-xl shadow-blue-500/30 overflow-hidden border-2 border-white/20 bg-white"
+            className="pointer-events-auto p-0 rounded-2xl shadow-xl shadow-blue-500/30 overflow-hidden border-2 border-white/20"
             title="安装应用"
          >
-            {/* 27.1.2 Specific Icon */}
+            {/* 27.1.2 Use Specific Logo */}
             <img src="https://i.ibb.co/vxq7QfYd/retouch-2025121423241826.png" alt="Install" className={`object-cover ${installMode === 'generic' || installMode === 'ios' ? 'w-10 h-10' : 'w-12 h-12'}`} />
          </motion.button>
       </div>
@@ -271,16 +268,14 @@ const InstallAppFloating = () => {
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in" onClick={() => setShowIOSModal(false)}>
            <div className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative animate-slide-up border border-gray-100 dark:border-gray-700" onClick={e => e.stopPropagation()}>
               <div className="flex flex-col items-center text-center">
-                 {/* iOS Share Icon Simulation */}
-                 <Share className="w-10 h-10 text-blue-500 mb-4" />
+                 <Share className="w-12 h-12 text-blue-500 mb-4" />
                  <h3 className="text-lg font-bold mb-2 dark:text-white">安装到 iOS 主屏幕</h3>
                  <p className="text-sm text-gray-500 mb-6 leading-relaxed">
-                    1. 轻点底部工具栏的 <span className="font-bold text-blue-600 inline-flex items-center"><Share className="w-3 h-3 mx-1"/></span> 分享按钮<br/>
+                    1. 轻点底部/顶部的 <span className="font-bold text-blue-600 inline-flex items-center"><Share className="w-3 h-3 mx-1"/></span> 分享按钮<br/>
                     2. 在菜单中选择 <span className="font-bold text-gray-800 dark:text-gray-200">“添加到主屏幕”</span>
                  </p>
                  <button onClick={() => setShowIOSModal(false)} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold">知道了</button>
               </div>
-              {/* Triangle pointer for bottom sheet style on mobile */}
               <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 w-4 h-4 bg-white dark:bg-gray-800 rotate-45 sm:hidden"></div>
            </div>
         </div>
@@ -306,11 +301,11 @@ const InstallAppFloating = () => {
       {/* 27.2.2 In-App Overlay (WeChat/DingTalk) */}
       {showInAppOverlay && (
           <div className="fixed inset-0 z-[100] bg-black/90 flex flex-col items-end p-5 animate-fade-in" onClick={() => setShowInAppOverlay(false)}>
-              <div className="flex flex-col items-end gap-2 pr-4 pt-4">
+              <div className="flex flex-col items-end gap-2">
                   <ArrowUp className="w-10 h-10 text-white animate-bounce" />
-                  <div className="text-white font-bold text-lg text-right leading-loose">
-                      请点击右上角 <span className="text-yellow-400 text-2xl mx-1">•••</span><br/>
-                      选择 <span className="text-yellow-400 bg-white/20 px-2 py-1 rounded">在浏览器打开</span><br/>
+                  <div className="text-white font-bold text-lg text-right">
+                      请点击右上角 <span className="text-yellow-400">•••</span><br/>
+                      选择 <span className="text-yellow-400">在浏览器打开</span><br/>
                       以安装应用
                   </div>
               </div>
