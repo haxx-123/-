@@ -145,6 +145,7 @@ const SWUpdateToast = () => {
 
 // --- 27. InstallAppFloating (Cross-Platform Compatible) ---
 const InstallAppFloating = () => {
+  // Modes: hidden (Scene A/F), native (Scene C), ios (Scene D), in-app (Scene B), generic (Scene E)
   const [installMode, setInstallMode] = useState<'hidden' | 'native' | 'ios' | 'in-app' | 'generic'>('hidden');
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   
@@ -154,58 +155,57 @@ const InstallAppFloating = () => {
   const [showInAppOverlay, setShowInAppOverlay] = useState(false);
 
   useEffect(() => {
-    // 27.2.1 Scenario A: Standalone / Already Installed Check (Highest Priority)
+    const ua = navigator.userAgent;
+    const isMobile = /Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+    const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+    // 27.2.1 Scenario A: Standalone / App Mode Check (The Guard Clause)
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
                          (window.navigator as any).standalone === true ||
                          window.location.search.includes('source=pwa');
                          
     if (isStandalone) {
         setInstallMode('hidden');
-        return; // BLOCK EXECUTION
+        return; // STOP EXECUTION
     }
-
-    const ua = navigator.userAgent;
     
-    // 27.2.2 Scenario B: In-App Browser
+    // 27.2.2 Scenario B: In-App Browser (WeChat/DingTalk)
     if (/MicroMessenger|DingTalk/i.test(ua)) {
         setInstallMode('in-app');
         return;
     }
 
     // 27.2.4 Scenario D: iOS
-    const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     if (isIOS) {
         setInstallMode('ios');
         return;
     }
 
-    // 27.2.3 Scenario C: Native Support
-    // We start with 'hidden' for Desktop or 'generic' for Mobile, then upgrade to 'native' if event fires.
-    const isMobile = /Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua);
-    
+    // 27.2.3 Scenario C: Native Support (Chrome/Edge on Android/Desktop)
+    // We default to 'generic' for mobile or 'hidden' for desktop, then upgrade if event fires.
     if (isMobile) {
-        setInstallMode('generic'); // 27.2.5 Scenario E default
+        setInstallMode('generic'); // Default fallback for mobile
     } else {
-        setInstallMode('hidden'); // 27.2.6 Scenario F default
+        setInstallMode('hidden'); // Default hidden for desktop (Scene F)
     }
 
-    // Capture Event
+    // Event Listener for Native Prompt
     const handleBeforeInstallPrompt = (e: any) => {
         e.preventDefault();
         setDeferredPrompt(e);
-        setInstallMode('native'); // Upgrade to Native
+        setInstallMode('native'); // Upgrade to native mode
         console.log('[Install] Native prompt captured');
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     
-    // Check global stash (from index.tsx)
+    // Check global stash (captured in index.tsx)
     if (window.deferredPrompt) {
         setDeferredPrompt(window.deferredPrompt);
         setInstallMode('native');
     }
 
-    // Cleanup listener
+    // Cleanup: App Installed
     const handleAppInstalled = () => {
         setInstallMode('hidden');
         alert("安装成功！即将启动...");
@@ -245,6 +245,8 @@ const InstallAppFloating = () => {
 
   if (installMode === 'hidden') return null;
 
+  const LOGO_URL = "https://i.ibb.co/vxq7QfYd/retouch-2025121423241826.png";
+
   return (
     <>
       {/* 27.1.3 Container Z-Index 40, pointer-events-none */}
@@ -259,7 +261,7 @@ const InstallAppFloating = () => {
             title="安装应用"
          >
             {/* 27.1.2 Use Specific Logo */}
-            <img src="https://i.ibb.co/vxq7QfYd/retouch-2025121423241826.png" alt="Install" className={`object-cover ${installMode === 'generic' || installMode === 'ios' ? 'w-10 h-10' : 'w-12 h-12'}`} />
+            <img src={LOGO_URL} alt="Install" className={`object-cover ${installMode === 'generic' || installMode === 'ios' ? 'w-10 h-10' : 'w-12 h-12'}`} />
          </motion.button>
       </div>
 
@@ -739,28 +741,13 @@ const AppContent = () => {
   useEffect(() => {
     const root = window.document.documentElement;
     root.classList.remove('dark', 'theme-prism-light', 'theme-prism-dark');
-    
-    // Clear inline style to let CSS vars take over, or set to match CSS vars
     root.style.removeProperty('background-color');
 
-    if (theme === 'dark') { 
-        root.classList.add('dark'); 
-        // 35.2.3 Pure Black
-        // CSS var --bg-primary handles #000000, but legacy might need this
-        // We will rely on CSS vars in index.html, but keeping this for safety if Tailwind config needs it
-    }
+    if (theme === 'dark') { root.classList.add('dark'); }
     else if (theme === 'prism-light') { root.classList.add('theme-prism-light'); }
     else if (theme === 'prism-dark') { root.classList.add('dark', 'theme-prism-dark'); }
-    else { 
-        // Light (Classic)
-        // Default CSS vars handle this
-    }
   }, [theme]);
 
-  // Popup logic... (omitted for brevity as no change requested here, logic preserved by full copy if file was requested)
-  // ... (rest of the file content identical to previous state)
-  
-  // Re-inserting full popup logic to ensure valid XML
   useEffect(() => {
     if (user && appReady && announcements.length > 0) {
         const today = new Date().toDateString();
