@@ -4,7 +4,8 @@ import { HashRouter as Router, Routes, Route, useLocation, useNavigate } from 'r
 import { 
   Menu, X, LayoutDashboard, Package, Import, History, 
   ShieldCheck, Settings, Bell, Download, Copy, Crop, 
-  LogOut, RefreshCw, UserCircle, Share, MoreHorizontal, FileSpreadsheet
+  LogOut, RefreshCw, UserCircle, Share, MoreHorizontal, FileSpreadsheet,
+  MoreVertical, Laptop, Smartphone
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import html2canvas from 'html2canvas';
@@ -82,72 +83,63 @@ const LoadingScreen = () => (
   </div>
 );
 
-// --- Updated InstallAppFloating Component (With Global Fix) ---
+// --- Updated InstallAppFloating Component (With Manual Guide) ---
 const InstallAppFloating = () => {
-  const [isVisible, setIsVisible] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
   const [showIOSModal, setShowIOSModal] = useState(false);
-  const deferredPromptRef = useRef<any>(null);
+  const [showManualModal, setShowManualModal] = useState(false); // For Android/PC manual install
+  const [installEvent, setInstallEvent] = useState<any>(null);
 
   useEffect(() => {
-    // 1. Check if app is already installed
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
-    if (isStandalone) {
-      console.log("[InstallApp] App is already standalone.");
-      setIsVisible(false);
-      return;
-    }
+    // 1. Check Standalone
+    const checkStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+    setIsStandalone(checkStandalone);
 
-    // 2. Check for iOS
+    // 2. Check iOS
     const checkIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     setIsIOS(checkIOS);
-    if (checkIOS) {
-        // Always show install button on iOS web (since there is no event)
-        setIsVisible(true);
-    }
 
-    // 3. Check for Global Deferred Prompt (Fix for Race Condition)
+    // 3. Check for Global Deferred Prompt (Immediate)
     if (window.deferredPrompt) {
         console.log("[InstallApp] Found global deferredPrompt");
-        deferredPromptRef.current = window.deferredPrompt;
-        setIsVisible(true);
+        setInstallEvent(window.deferredPrompt);
     }
 
-    // 4. Listen for future events (if not already fired)
+    // 4. Listen for future events
     const handleBeforeInstallPrompt = (e: any) => {
       console.log("[InstallApp] captured event in component listener");
       e.preventDefault(); 
-      deferredPromptRef.current = e;
-      window.deferredPrompt = e; // Sync global
-      setIsVisible(true);
+      setInstallEvent(e);
+      window.deferredPrompt = e;
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     };
   }, []);
 
   const handleClick = () => {
-    if (isIOS) {
-      setShowIOSModal(true);
-    } else if (deferredPromptRef.current) {
-      deferredPromptRef.current.prompt();
-      deferredPromptRef.current.userChoice.then((choiceResult: any) => {
+    if (installEvent) {
+      installEvent.prompt();
+      installEvent.userChoice.then((choiceResult: any) => {
         if (choiceResult.outcome === 'accepted') {
           console.log('[InstallApp] User accepted the A2HS prompt');
         }
-        deferredPromptRef.current = null;
+        setInstallEvent(null);
         window.deferredPrompt = null;
-        setIsVisible(false);
       });
+    } else if (isIOS) {
+      setShowIOSModal(true);
     } else {
-        alert("调试信息：无安装事件捕获。请尝试刷新页面，或确保您的浏览器支持 PWA 安装 (如 Chrome/Edge)。");
+      // No event captured yet (common in Chrome until user interacts or if heuristics aren't met)
+      // Show manual instructions
+      setShowManualModal(true);
     }
   };
 
-  if (!isVisible) return null;
+  if (isStandalone) return null;
 
   return (
     <>
@@ -181,15 +173,54 @@ const InstallAppFloating = () => {
               <button onClick={() => setShowIOSModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 bg-gray-100 dark:bg-gray-700 rounded-full p-1"><X className="w-4 h-4"/></button>
               <div className="flex flex-col items-center text-center">
                  <img src={APP_LOGO_URL} alt="App Icon" className="w-16 h-16 rounded-2xl mb-4 shadow-lg border border-gray-100 dark:border-gray-600" />
-                 <h3 className="text-lg font-bold mb-2 dark:text-white">安装到主屏幕</h3>
+                 <h3 className="text-lg font-bold mb-2 dark:text-white">安装到 iOS 主屏幕</h3>
                  <p className="text-sm text-gray-500 mb-6 leading-relaxed">
-                    为了获得最佳的全屏体验，请：<br/>
                     1. 点击底部工具栏的 <span className="font-bold text-blue-600 inline-flex items-center mx-1"><Share className="w-4 h-4"/></span> 分享按钮<br/>
                     2. 在菜单中选择 <span className="font-bold text-gray-800 dark:text-gray-200">“添加到主屏幕”</span>
                  </p>
                  <button onClick={() => setShowIOSModal(false)} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30">知道了</button>
               </div>
               <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 w-4 h-4 bg-white dark:bg-gray-800 rotate-45 sm:hidden"></div>
+           </div>
+        </div>
+      )}
+
+      {/* Manual Install Modal (Android/PC Fallback) */}
+      {showManualModal && (
+        <div 
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in"
+            onClick={() => setShowManualModal(false)}
+        >
+           <div 
+             className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative animate-scale-in border border-gray-100 dark:border-gray-700"
+             onClick={e => e.stopPropagation()}
+           >
+              <button onClick={() => setShowManualModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 bg-gray-100 dark:bg-gray-700 rounded-full p-1"><X className="w-4 h-4"/></button>
+              <div className="flex flex-col items-center text-center">
+                 <img src={APP_LOGO_URL} alt="App Icon" className="w-16 h-16 rounded-2xl mb-4 shadow-lg border border-gray-100 dark:border-gray-600" />
+                 <h3 className="text-lg font-bold mb-2 dark:text-white">安装到设备</h3>
+                 <p className="text-xs text-gray-400 mb-4">自动安装暂时不可用，请手动安装：</p>
+                 
+                 <div className="text-left w-full bg-gray-50 dark:bg-gray-700/50 p-4 rounded-xl mb-6 space-y-3">
+                    <div className="flex items-start gap-3">
+                        <Laptop className="w-5 h-5 text-blue-500 mt-0.5 shrink-0" />
+                        <div>
+                            <p className="font-bold text-sm text-gray-800 dark:text-gray-200">电脑端 (Chrome/Edge)</p>
+                            <p className="text-xs text-gray-500">点击浏览器地址栏右侧的 <Download className="w-3 h-3 inline"/> 安装图标，或右上角菜单中的“安装 StockWise”。</p>
+                        </div>
+                    </div>
+                    <div className="h-px bg-gray-200 dark:bg-gray-600 w-full"></div>
+                    <div className="flex items-start gap-3">
+                        <Smartphone className="w-5 h-5 text-green-500 mt-0.5 shrink-0" />
+                        <div>
+                            <p className="font-bold text-sm text-gray-800 dark:text-gray-200">安卓端 (Chrome)</p>
+                            <p className="text-xs text-gray-500">点击浏览器右上角 <MoreVertical className="w-3 h-3 inline"/> 菜单，选择“安装应用”或“添加到主屏幕”。</p>
+                        </div>
+                    </div>
+                 </div>
+
+                 <button onClick={() => setShowManualModal(false)} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30">知道了</button>
+              </div>
            </div>
         </div>
       )}

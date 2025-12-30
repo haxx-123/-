@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'stockwise-v5-offline';
+const CACHE_NAME = 'stockwise-v6-offline';
 const URLS_TO_CACHE = [
   '/',
   '/index.html',
@@ -8,7 +8,7 @@ const URLS_TO_CACHE = [
 
 // 1. INSTALL: Cache core assets to pass PWA "offline capability" check
 self.addEventListener('install', (event) => {
-    console.log('[SW] Installing v5...');
+    console.log('[SW] Installing v6...');
     self.skipWaiting();
     
     event.waitUntil(
@@ -24,7 +24,7 @@ self.addEventListener('install', (event) => {
 
 // 2. ACTIVATE: Cleanup old caches and claim clients
 self.addEventListener('activate', (event) => {
-    console.log('[SW] Activating v5...');
+    console.log('[SW] Activating v6...');
     event.waitUntil(clients.claim());
     
     event.waitUntil(
