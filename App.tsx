@@ -82,41 +82,43 @@ const LoadingScreen = () => (
   </div>
 );
 
-// --- Updated InstallAppFloating Component (DEBUGGING MODE) ---
+// --- Updated InstallAppFloating Component (With Global Fix) ---
 const InstallAppFloating = () => {
   const [isVisible, setIsVisible] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
   const [showIOSModal, setShowIOSModal] = useState(false);
-  const deferredPrompt = useRef<any>(null);
+  const deferredPromptRef = useRef<any>(null);
 
   useEffect(() => {
-    // Debug info
+    // 1. Check if app is already installed
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
-    const checkIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    
-    console.log("[InstallApp Debug] Init:", {
-        isStandalone,
-        checkIOS,
-        userAgent: navigator.userAgent,
-        deferredPrompt: deferredPrompt.current
-    });
-
     if (isStandalone) {
-      console.log("[InstallApp Debug] App is standalone (installed)");
+      console.log("[InstallApp] App is already standalone.");
       setIsVisible(false);
-      // return; // Removed for debug force render
+      return;
     }
 
+    // 2. Check for iOS
+    const checkIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     setIsIOS(checkIOS);
     if (checkIOS) {
-        console.log("[InstallApp Debug] iOS detected");
+        // Always show install button on iOS web (since there is no event)
         setIsVisible(true);
     }
 
+    // 3. Check for Global Deferred Prompt (Fix for Race Condition)
+    if (window.deferredPrompt) {
+        console.log("[InstallApp] Found global deferredPrompt");
+        deferredPromptRef.current = window.deferredPrompt;
+        setIsVisible(true);
+    }
+
+    // 4. Listen for future events (if not already fired)
     const handleBeforeInstallPrompt = (e: any) => {
-      console.log("[InstallApp Debug] beforeinstallprompt fired");
+      console.log("[InstallApp] captured event in component listener");
       e.preventDefault(); 
-      deferredPrompt.current = e;
+      deferredPromptRef.current = e;
+      window.deferredPrompt = e; // Sync global
       setIsVisible(true);
     };
 
@@ -128,51 +130,41 @@ const InstallAppFloating = () => {
   }, []);
 
   const handleClick = () => {
-    console.log("[InstallApp Debug] Clicked. isIOS:", isIOS, "Prompt available:", !!deferredPrompt.current);
     if (isIOS) {
       setShowIOSModal(true);
-    } else if (deferredPrompt.current) {
-      deferredPrompt.current.prompt();
-      deferredPrompt.current.userChoice.then((choiceResult: any) => {
+    } else if (deferredPromptRef.current) {
+      deferredPromptRef.current.prompt();
+      deferredPromptRef.current.userChoice.then((choiceResult: any) => {
         if (choiceResult.outcome === 'accepted') {
-          console.log('[InstallApp Debug] User accepted the A2HS prompt');
-          setIsVisible(false); 
-        } else {
-          console.log('[InstallApp Debug] User dismissed the A2HS prompt');
+          console.log('[InstallApp] User accepted the A2HS prompt');
         }
-        deferredPrompt.current = null;
+        deferredPromptRef.current = null;
+        window.deferredPrompt = null;
+        setIsVisible(false);
       });
     } else {
-        alert("调试信息：无安装事件捕获，请检查控制台日志。");
+        alert("调试信息：无安装事件捕获。请尝试刷新页面，或确保您的浏览器支持 PWA 安装 (如 Chrome/Edge)。");
     }
   };
 
-  // DEBUG: Force render regardless of isVisible state
-  // if (!isVisible) return null; 
+  if (!isVisible) return null;
 
   return (
     <>
-      {/* 
-         DEBUG MODE: z-index set to 100
-      */}
-      <div className="fixed top-20 right-4 z-[100] pointer-events-none flex flex-col items-end gap-2 animate-bounce-slow">
+      <div className="fixed top-20 right-4 z-[90] flex flex-col items-end gap-2 animate-bounce-slow">
          <motion.button
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
             onClick={handleClick}
-            className="pointer-events-auto p-3 bg-gradient-to-br from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-full shadow-xl shadow-blue-500/30 flex items-center justify-center transition-all border-2 border-white/20"
+            className="p-3 bg-gradient-to-br from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-full shadow-xl shadow-blue-500/30 flex items-center justify-center transition-all border-2 border-white/20"
             title="安装应用"
          >
             <Download className="w-5 h-5" />
          </motion.button>
-         <div className="bg-black/60 backdrop-blur-md text-white text-[10px] font-bold px-2 py-1 rounded-md pointer-events-none shadow-sm">
-             安装APP (Debug)
-         </div>
-         {/* Debug Status Display */}
-         <div className="bg-red-500/80 text-white text-[8px] px-1 rounded pointer-events-none">
-             IOS:{isIOS?'Y':'N'} Vis:{isVisible?'Y':'N'}
+         <div className="bg-blue-600/90 text-white text-[10px] font-bold px-2 py-1 rounded-md shadow-sm backdrop-blur-sm">
+             安装APP
          </div>
       </div>
 

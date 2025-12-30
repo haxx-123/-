@@ -1,6 +1,14 @@
 
 export type ThemeMode = 'light' | 'dark' | 'prism-light' | 'prism-dark';
 
+// Add global window extension for PWA
+declare global {
+  interface Window {
+    deferredPrompt: any;
+    faceapi: any;
+  }
+}
+
 export enum RoleLevel {
   ROOT = '00',
   BOSS = '01',
