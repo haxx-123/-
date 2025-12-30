@@ -118,7 +118,7 @@ const SWUpdateToast = () => {
 
 // --- 27. InstallAppFloating (Cross-Platform Compatible) ---
 const InstallAppFloating = () => {
-  // Modes: hidden (Scene A/F), native (Scene C), ios (Scene D), in-app (Scene B), generic (Scene E)
+  // Modes: hidden, native (WebAPK), ios, in-app, generic (manual)
   const [installMode, setInstallMode] = useState<'hidden' | 'native' | 'ios' | 'in-app' | 'generic'>('hidden');
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   
@@ -128,60 +128,69 @@ const InstallAppFloating = () => {
   const [showInAppOverlay, setShowInAppOverlay] = useState(false);
 
   useEffect(() => {
-    const ua = navigator.userAgent;
-    const isMobile = /Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua);
-    const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-
-    // 27.2.1 Scenario A: Standalone / App Mode Check (The Guard Clause)
+    // 1. Guard: Check if already in Standalone Mode (Highest Priority)
+    // 修复“已安装状态”检测：确保在App内部不会显示按钮
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
                          (window.navigator as any).standalone === true ||
                          window.location.search.includes('source=pwa');
                          
     if (isStandalone) {
         setInstallMode('hidden');
-        return; // STOP EXECUTION
+        return; 
     }
-    
-    // 27.2.2 Scenario B: In-App Browser (WeChat/DingTalk)
-    if (/MicroMessenger|DingTalk/i.test(ua)) {
+
+    const ua = navigator.userAgent;
+    const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isInApp = /MicroMessenger|DingTalk/i.test(ua);
+    const isMobile = /Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+
+    // 2. In-App Browser Check
+    if (isInApp) {
         setInstallMode('in-app');
         return;
     }
 
-    // 27.2.4 Scenario D: iOS
+    // 3. iOS Check
     if (isIOS) {
         setInstallMode('ios');
         return;
     }
 
-    // 27.2.3 Scenario C: Native Support (Chrome/Edge on Android/Desktop)
-    // We default to 'generic' for mobile or 'hidden' for desktop, then upgrade if event fires.
-    if (isMobile) {
-        setInstallMode('generic'); // Default fallback for mobile
-    } else {
-        setInstallMode('hidden'); // Default hidden for desktop (Scene F)
-    }
-
-    // Event Listener for Native Prompt
+    // 4. Native Prompt Handling (Android & Desktop)
     const handleBeforeInstallPrompt = (e: any) => {
+        // Prevent Chrome 67 and earlier from automatically showing the prompt
         e.preventDefault();
+        // Stash the event so it can be triggered later.
+        window.deferredPrompt = e; 
         setDeferredPrompt(e);
-        setInstallMode('native'); // Upgrade to native mode
-        console.log('[Install] Native prompt captured');
+        // Update UI to notify the user they can add to home screen
+        // 修复“电脑端图标不显示”：只要捕获到事件，无论PC还是手机，都显示 Native 按钮
+        setInstallMode('native');
+        console.log('[Install] Native prompt event captured');
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    
-    // Check global stash (captured in index.tsx)
+
+    // Check if the event was already fired before this component mounted (Global capture in index.tsx)
     if (window.deferredPrompt) {
         setDeferredPrompt(window.deferredPrompt);
         setInstallMode('native');
+    } else {
+        // Fallback Logic:
+        // 如果没有捕获到 Native 事件：
+        // - 手机端：显示 Generic 按钮（手动引导），防止用户不知道可以安装。
+        // - 电脑端：保持隐藏，直到事件触发（电脑端通常不显示手动引导）。
+        if (isMobile) {
+            // 使用回调函数更新，防止覆盖刚刚触发的 'native' 状态
+            setInstallMode(prev => prev === 'native' ? 'native' : 'generic');
+        }
     }
 
-    // Cleanup: App Installed
+    // Cleanup
     const handleAppInstalled = () => {
         setInstallMode('hidden');
-        alert("安装成功！即将启动...");
+        setDeferredPrompt(null);
+        window.deferredPrompt = null;
     };
     window.addEventListener('appinstalled', handleAppInstalled);
 
@@ -191,34 +200,39 @@ const InstallAppFloating = () => {
     };
   }, []);
 
-  const handleClick = () => {
-      switch (installMode) {
-          case 'native':
-              if (deferredPrompt) {
-                  deferredPrompt.prompt();
-                  deferredPrompt.userChoice.then((choice: any) => {
-                      if (choice.outcome === 'accepted') setInstallMode('hidden');
-                      setDeferredPrompt(null);
-                  });
-              }
-              break;
-          case 'ios':
-              setShowIOSModal(true);
-              break;
-          case 'in-app':
-              setShowInAppOverlay(true);
-              break;
-          case 'generic':
-              setShowGenericModal(true);
-              break;
-          default:
-              break;
+  const handleClick = async () => {
+      // 修复“手机端无法自动安装”：
+      // 优先检查 deferredPrompt 是否存在。如果存在，必须调用 prompt()，无论当前 installMode 是什么。
+      if (deferredPrompt) {
+          try {
+            await deferredPrompt.prompt();
+            const { outcome } = await deferredPrompt.userChoice;
+            console.log(`User response to the install prompt: ${outcome}`);
+            if (outcome === 'accepted') {
+                setInstallMode('hidden');
+            }
+            // Chrome only allows prompt() once per event
+            setDeferredPrompt(null);
+            window.deferredPrompt = null; 
+          } catch (e) {
+            console.error("Install prompt failed", e);
+          }
+          return;
+      }
+
+      // Fallback handlers if native prompt is not available
+      if (installMode === 'ios') {
+          setShowIOSModal(true);
+      } else if (installMode === 'in-app') {
+          setShowInAppOverlay(true);
+      } else {
+          // Generic/Manual fallback (Android without native event)
+          setShowGenericModal(true);
       }
   };
 
   if (installMode === 'hidden') return null;
 
-  // 27.1.2 Use Specific Logo for the button itself (NOT the manifest icons)
   const LOGO_URL = "https://i.ibb.co/vxq7QfYd/retouch-2025121423241826.png";
 
   return (
