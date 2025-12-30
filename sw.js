@@ -3,14 +3,23 @@ const CACHE_NAME = 'stockwise-v9-offline';
 const URLS_TO_CACHE = [
   '/',
   '/index.html',
-  '/manifest.json'
+  '/manifest.json',
+  // Caching the icons defined in manifest.json to ensure offline availability
+  // These must match the src in manifest.json exactly to avoid 404s during install
+  'https://i.ibb.co/93cvPv7p/maskable-icon-x192.png',
+  'https://i.ibb.co/HLWPZQNX/maskable-icon-x512.png'
 ];
 
 // 26.1.3 Service Worker Logic
-// Install: Cache core files
+// Install: Cache core files & FORCE ACTIVATE
 self.addEventListener('install', (event) => {
-    console.log('[SW] Installing v9...');
-    // We wait for the client to send SKIP_WAITING to activate, implementing the "Toast update" flow.
+    console.log('[SW] Installing v9 (Forced Activation)...');
+    
+    // 1. Force Immediate Activation (Skipping Wait)
+    // This ensures the SW takes control immediately for the first install,
+    // which is crucial for WebAPK generation criteria.
+    self.skipWaiting();
+
     event.waitUntil(
         caches.open(CACHE_NAME).then((cache) => {
             return cache.addAll(URLS_TO_CACHE).catch(err => {
@@ -23,7 +32,7 @@ self.addEventListener('install', (event) => {
 // Activate: Cleanup old caches & Claim Clients
 self.addEventListener('activate', (event) => {
     console.log('[SW] Activating v9...');
-    event.waitUntil(clients.claim());
+    event.waitUntil(clients.claim()); // Take control immediately
     event.waitUntil(
         caches.keys().then((cacheNames) => {
             return Promise.all(
@@ -36,13 +45,6 @@ self.addEventListener('activate', (event) => {
             );
         })
     );
-});
-
-// Message Handler for Skip Waiting (Triggered by UI Toast)
-self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
-  }
 });
 
 // 26.1.4 Caching Strategy
@@ -74,4 +76,8 @@ self.addEventListener('fetch', (event) => {
         );
         return;
     }
+
+    // 4. Default Fallback (Explicitly allowing network for anything else)
+    // This covers any other requests not matched above.
+    // return fetch(event.request); // Implicit in SW if no respondWith is called
 });
