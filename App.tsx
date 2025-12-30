@@ -143,7 +143,7 @@ const SWUpdateToast = () => {
     );
 };
 
-// --- 27. InstallAppFloating (Full Compatibility) ---
+// --- 27. InstallAppFloating (Revised Strict Logic) ---
 const InstallAppFloating = () => {
   // Scenario State: 'hidden' | 'native' | 'ios' | 'in-app' | 'generic'
   const [installMode, setInstallMode] = useState<string>('hidden');
@@ -155,43 +155,46 @@ const InstallAppFloating = () => {
   const [showInAppOverlay, setShowInAppOverlay] = useState(false);
 
   useEffect(() => {
-    const checkEnvironment = () => {
-        // 27.2.1 Scenario A: Already Installed / Standalone
-        const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
-        if (isStandalone) {
-            setInstallMode('hidden');
-            return;
-        }
+    // 1. HIGHEST PRIORITY CHECK: Is App Installed/Standalone?
+    // If true, we forcefully keep 'hidden' and RETURN immediately.
+    // This blocks any subsequent logic from showing the button.
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
+                         (window.navigator as any).standalone === true;
+    
+    if (isStandalone) {
+        setInstallMode('hidden');
+        return; // CRITICAL: Stop execution here.
+    }
 
-        const ua = navigator.userAgent;
-        const isMobile = /Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua);
-        const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    // --- Only proceed if NOT standalone ---
 
-        // 27.2.2 Scenario B: In-App Browser (WeChat/DingTalk)
-        if (/MicroMessenger|DingTalk/i.test(ua)) {
-            setInstallMode('in-app');
-            return;
-        }
+    const ua = navigator.userAgent;
+    const isMobile = /Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+    const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
-        // 27.2.4 Scenario D: iOS
-        if (isIOS) {
-            setInstallMode('ios');
-            return;
-        }
+    // 2. Scenario B: In-App Browser (WeChat/DingTalk)
+    if (/MicroMessenger|DingTalk/i.test(ua)) {
+        setInstallMode('in-app');
+        return;
+    }
 
-        // 27.2.3 Scenario C: Native Support (Chrome/Edge) -> Handled by event listener below
-        // If event fires, we switch to 'native'.
-        // Initial state for Mobile is 'generic' (Scenario E), for Desktop is 'hidden' (Scenario F).
-        if (isMobile) {
-            setInstallMode('generic'); // Default for mobile until proven native
-        } else {
-            setInstallMode('hidden'); // Default for desktop
-        }
-    };
+    // 3. Scenario D: iOS
+    if (isIOS) {
+        setInstallMode('ios');
+        return;
+    }
 
-    checkEnvironment();
+    // 4. Default State based on device type
+    // Mobile -> Generic Instructions (Scenario E) initially
+    // Desktop -> Hidden (Scenario F) initially
+    if (isMobile) {
+        setInstallMode('generic');
+    } else {
+        setInstallMode('hidden');
+    }
 
-    // Event Listener for Native Support
+    // 5. Scenario C: Native Support (Chrome/Edge/Android)
+    // This event listener allows upgrading from 'generic'/'hidden' to 'native' if the browser supports it.
     const handleBeforeInstallPrompt = (e: any) => {
         e.preventDefault(); // Prevent mini-infobar
         setDeferredPrompt(e);
@@ -201,7 +204,7 @@ const InstallAppFloating = () => {
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     
-    // Check global stash
+    // Check global stash (in case event fired before mount)
     if (window.deferredPrompt) {
         setDeferredPrompt(window.deferredPrompt);
         setInstallMode('native');
@@ -261,10 +264,6 @@ const InstallAppFloating = () => {
             {/* 27.1.2 Specific Icon */}
             <img src="https://i.ibb.co/vxq7QfYd/retouch-2025121423241826.png" alt="Install" className={`object-cover ${installMode === 'generic' || installMode === 'ios' ? 'w-10 h-10' : 'w-12 h-12'}`} />
          </motion.button>
-         {/* Label */}
-         {/* <div className="pointer-events-auto bg-blue-600/90 text-white text-[10px] font-bold px-2 py-1 rounded-md shadow-sm backdrop-blur-sm">
-             安装APP
-         </div> */}
       </div>
 
       {/* 27.2.4 iOS Modal */}

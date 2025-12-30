@@ -3,6 +3,11 @@
   "name": "棱镜",
   "description": "StockWise-智能库管系统",
   "id": "/",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#F2F3F7",
+  "background_color": "#F2F3F7",
+  "orientation": "portrait",
   "icons": [
     {
       "src": "https://i.ibb.co/93cvPv7p/maskable-icon-x192.png",
@@ -30,9 +35,5 @@
       "form_factor": "wide",
       "label": "Desktop View"
     }
-  ],
-  "start_url": "/",
-  "display": "standalone",
-  "theme_color": "#F2F3F7",
-  "background_color": "#F2F3F7"
+  ]
 }
