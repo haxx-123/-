@@ -48,10 +48,7 @@
         // 2. 将事件保存到全局变量
         window.deferredPrompt = e;
         
-        // 3. 立即派发一个自定义事件，通知 React 组件
-        window.dispatchEvent(new Event('pwa-install-ready'));
-        
-        console.log('[HTML] PWA Event Captured & Dispatched (pwa-install-ready)');
+        console.log('[HTML] PWA Event Captured (window.deferredPrompt set)');
       });
     </script>
     <style>

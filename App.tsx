@@ -124,7 +124,7 @@ const InstallAppFloating = () => {
   // 环境检测状态
   const [isIOS, setIsIOS] = useState(false);
   const [isInApp, setIsInApp] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
+  const [isMobileEnv, setIsMobileEnv] = useState(false);
   
   // 模态框显示状态
   const [showIOSModal, setShowIOSModal] = useState(false);
@@ -141,72 +141,51 @@ const InstallAppFloating = () => {
     
     setIsIOS(_isIOS);
     setIsInApp(_isInApp);
-    setIsMobile(_isMobile);
+    setIsMobileEnv(_isMobile);
 
-    // 2. 定义同步函数：尝试从全局变量读取
-    const syncPrompt = () => {
-        // @ts-ignore
-        if (window.deferredPrompt) {
-            console.log('[React] 成功同步 PWA 安装事件');
-            // @ts-ignore
-            setNativePromptEvent(window.deferredPrompt);
-        }
-    };
-
-    // 3. 立即检查一次
-    syncPrompt();
-
-    // 4. 监听自定义事件
-    window.addEventListener('pwa-install-ready', syncPrompt);
-
-    // 5. 监听原生事件作为兜底
-    const handleNative = (e: any) => {
+    // 2. 直接监听 beforeinstallprompt (双重保险)
+    const handleBeforeInstallPrompt = (e: any) => {
         e.preventDefault();
-        // @ts-ignore
         window.deferredPrompt = e;
-        syncPrompt();
+        setNativePromptEvent(e);
+        console.log('[React] PWA Prompt Captured directly in component');
     };
-    window.addEventListener('beforeinstallprompt', handleNative);
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
 
-    // 6. 【关键】暴力轮询：前5秒内不断检查，防止 race condition
-    const timer = setInterval(syncPrompt, 500);
-    const timeout = setTimeout(() => clearInterval(timer), 5000);
+    // 3. 检查全局变量 (防止 React 挂载晚于事件触发)
+    if (window.deferredPrompt) {
+        setNativePromptEvent(window.deferredPrompt);
+    }
 
     return () => {
-        window.removeEventListener('pwa-install-ready', syncPrompt);
-        window.removeEventListener('beforeinstallprompt', handleNative);
-        clearInterval(timer);
-        clearTimeout(timeout);
+        window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     };
   }, []);
 
-  // 3. 已安装/Standalone 模式检测 (隐藏按钮)
+  // 4. 已安装/Standalone 模式检测 (隐藏按钮)
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
                        (window.navigator as any).standalone === true ||
                        window.location.search.includes('source=pwa');
 
   if (isStandalone) return null;
 
-  // 4. 显示逻辑 - 始终显示，作为手动入口
-  // 即使没有捕获到事件，也允许用户点击查看“如何安装”
-  const shouldShow = true;
-
-  if (!shouldShow) return null;
-
   const handleClick = async () => {
+      // 关键修复：点击时再次尝试读取全局变量，防止 state 未同步
+      const promptEvent = nativePromptEvent || window.deferredPrompt;
+
       // 优先处理原生安装
-      if (nativePromptEvent) {
+      if (promptEvent) {
           try {
-              await nativePromptEvent.prompt();
-              const { outcome } = await nativePromptEvent.userChoice;
+              await promptEvent.prompt();
+              const { outcome } = await promptEvent.userChoice;
               console.log(`Install outcome: ${outcome}`);
               if (outcome === 'accepted') {
                   setNativePromptEvent(null);
-                  // @ts-ignore
                   window.deferredPrompt = null;
               }
           } catch (e) {
               console.error("Install failed", e);
+              // 如果 prompt 失败（比如失效），显示通用引导
               setShowGenericModal(true);
           }
           return;
@@ -217,11 +196,11 @@ const InstallAppFloating = () => {
           setShowInAppOverlay(true);
       } else if (isIOS) {
           setShowIOSModal(true);
-      } else if (isMobile) {
+      } else if (isMobileEnv) {
           // Android/其他移动端 兜底
           setShowGenericModal(true);
       } else {
-          // 桌面端 兜底
+          // 桌面端 兜底 (修复：电脑端不显示图标的问题，现在点击会弹出引导)
           setShowDesktopModal(true);
       }
   };
@@ -230,7 +209,7 @@ const InstallAppFloating = () => {
 
   return (
     <>
-      <div className="fixed top-20 right-4 z-40 pointer-events-none flex flex-col items-end gap-2 animate-bounce-slow">
+      <div className="fixed top-20 right-4 z-[9999] flex flex-col items-end gap-2">
          <motion.button
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
