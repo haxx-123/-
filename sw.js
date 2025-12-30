@@ -1,30 +1,29 @@
 
-const CACHE_NAME = 'stockwise-v8-offline';
+const CACHE_NAME = 'stockwise-v9-offline';
 const URLS_TO_CACHE = [
   '/',
   '/index.html',
   '/manifest.json'
 ];
 
-// 1. INSTALL
+// 26.1.3 Service Worker Logic
+// Install: Cache core files
 self.addEventListener('install', (event) => {
-    console.log('[SW] Installing v8...');
-    // We do NOT call skipWaiting() automatically here to avoid disrupting active sessions.
-    // Instead, we wait for the client to send a SKIP_WAITING message via the Update Toast.
+    console.log('[SW] Installing v9...');
+    // We wait for the client to send SKIP_WAITING to activate, implementing the "Toast update" flow.
+    event.waitUntil(
+        caches.open(CACHE_NAME).then((cache) => {
+            return cache.addAll(URLS_TO_CACHE).catch(err => {
+                console.warn('[SW] Caching warning:', err);
+            });
+        })
+    );
 });
 
-// Message handler for manual skipWaiting
-self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
-  }
-});
-
-// 2. ACTIVATE
+// Activate: Cleanup old caches
 self.addEventListener('activate', (event) => {
-    console.log('[SW] Activating v8...');
+    console.log('[SW] Activating v9...');
     event.waitUntil(clients.claim());
-    
     event.waitUntil(
         caches.keys().then((cacheNames) => {
             return Promise.all(
@@ -39,20 +38,40 @@ self.addEventListener('activate', (event) => {
     );
 });
 
-// 3. FETCH
+// Message Handler for Skip Waiting (Triggered by UI Toast)
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
+// 26.1.4 Caching Strategy
 self.addEventListener('fetch', (event) => {
-    // 26.1.4 Cache Strategy: Network First for critical content
-    event.respondWith(
-        fetch(event.request)
-        .catch(() => {
-            return caches.match(event.request).then((response) => {
-                if (response) {
-                    return response;
-                }
-                if (event.request.mode === 'navigate') {
-                    return caches.match('/index.html');
-                }
-            });
-        })
-    );
+    const url = new URL(event.request.url);
+
+    // 1. API Requests (Supabase): Network Only (Ensure real-time inventory)
+    if (url.pathname.startsWith('/api') || url.hostname.includes('supabase')) {
+        return; // Fallback to browser default (Network)
+    }
+
+    // 2. Static Assets (JS/CSS/Images): Cache First
+    if (url.pathname.match(/\.(js|css|png|jpg|jpeg|svg|ico)$/)) {
+        event.respondWith(
+            caches.match(event.request).then((response) => {
+                return response || fetch(event.request);
+            })
+        );
+        return;
+    }
+
+    // 3. HTML Navigation: Network First (Fallback to cached offline page/index)
+    if (event.request.mode === 'navigate') {
+        event.respondWith(
+            fetch(event.request)
+            .catch(() => {
+                return caches.match('/index.html');
+            })
+        );
+        return;
+    }
 });
