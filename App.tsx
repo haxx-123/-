@@ -120,7 +120,6 @@ const SWUpdateToast = () => {
 const InstallAppFloating = () => {
   // Modes: hidden, native (WebAPK), ios, in-app, generic (manual)
   const [installMode, setInstallMode] = useState<'hidden' | 'native' | 'ios' | 'in-app' | 'generic'>('hidden');
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   
   // UI States
   const [showIOSModal, setShowIOSModal] = useState(false);
@@ -129,7 +128,6 @@ const InstallAppFloating = () => {
 
   useEffect(() => {
     // 1. Guard: Check if already in Standalone Mode (Highest Priority)
-    // 修复“已安装状态”检测：确保在App内部不会显示按钮
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
                          (window.navigator as any).standalone === true ||
                          window.location.search.includes('source=pwa');
@@ -144,75 +142,78 @@ const InstallAppFloating = () => {
     const isInApp = /MicroMessenger|DingTalk/i.test(ua);
     const isMobile = /Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua);
 
-    // 2. In-App Browser Check
-    if (isInApp) {
-        setInstallMode('in-app');
-        return;
-    }
-
-    // 3. iOS Check
-    if (isIOS) {
-        setInstallMode('ios');
-        return;
-    }
-
-    // 4. Native Prompt Handling (Android & Desktop)
-    const handleBeforeInstallPrompt = (e: any) => {
-        // Prevent Chrome 67 and earlier from automatically showing the prompt
-        e.preventDefault();
-        // Stash the event so it can be triggered later.
-        window.deferredPrompt = e; 
-        setDeferredPrompt(e);
-        // Update UI to notify the user they can add to home screen
-        // 修复“电脑端图标不显示”：只要捕获到事件，无论PC还是手机，都显示 Native 按钮
-        setInstallMode('native');
-        console.log('[Install] Native prompt event captured');
+    // State Check Function
+    const checkState = () => {
+        // Priority 1: Native Prompt Available (Desktop or Mobile)
+        if (window.deferredPrompt) {
+            setInstallMode('native');
+            return;
+        }
+        // Priority 2: In-App Browser
+        if (isInApp) {
+            setInstallMode('in-app');
+            return;
+        }
+        // Priority 3: iOS
+        if (isIOS) {
+            setInstallMode('ios');
+            return;
+        }
+        // Priority 4: Android/Mobile Manual Fallback (Only if native prompt hasn't fired yet)
+        if (isMobile) {
+            setInstallMode('generic');
+            return;
+        }
+        // Priority 5: Desktop Default -> Hidden (until native prompt fires)
+        setInstallMode('hidden');
     };
 
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    // Initial Run
+    checkState();
 
-    // Check if the event was already fired before this component mounted (Global capture in index.tsx)
-    if (window.deferredPrompt) {
-        setDeferredPrompt(window.deferredPrompt);
-        setInstallMode('native');
-    } else {
-        // Fallback Logic:
-        // 如果没有捕获到 Native 事件：
-        // - 手机端：显示 Generic 按钮（手动引导），防止用户不知道可以安装。
-        // - 电脑端：保持隐藏，直到事件触发（电脑端通常不显示手动引导）。
-        if (isMobile) {
-            // 使用回调函数更新，防止覆盖刚刚触发的 'native' 状态
-            setInstallMode(prev => prev === 'native' ? 'native' : 'generic');
+    // Event Listener: Capture native prompt
+    const handlePrompt = (e: any) => {
+        e.preventDefault();
+        window.deferredPrompt = e;
+        console.log('[Component] Native prompt captured');
+        checkState();
+    };
+    window.addEventListener('beforeinstallprompt', handlePrompt);
+
+    // Polling: Check global variable every 1s (Fix for race conditions)
+    const timer = setInterval(() => {
+        if (window.deferredPrompt && installMode !== 'native') {
+            console.log('[Polling] Found deferredPrompt, enabling native install');
+            checkState();
         }
-    }
+    }, 1000);
 
-    // Cleanup
+    // Cleanup: App Installed
     const handleAppInstalled = () => {
         setInstallMode('hidden');
-        setDeferredPrompt(null);
         window.deferredPrompt = null;
     };
     window.addEventListener('appinstalled', handleAppInstalled);
 
     return () => {
-        window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+        window.removeEventListener('beforeinstallprompt', handlePrompt);
         window.removeEventListener('appinstalled', handleAppInstalled);
+        clearInterval(timer);
     };
-  }, []);
+  }, [installMode]);
 
   const handleClick = async () => {
-      // 修复“手机端无法自动安装”：
-      // 优先检查 deferredPrompt 是否存在。如果存在，必须调用 prompt()，无论当前 installMode 是什么。
-      if (deferredPrompt) {
+      // Native Installation (Highest Priority)
+      // Directly access the global variable to ensure we have the latest obj
+      if (window.deferredPrompt) {
           try {
-            await deferredPrompt.prompt();
-            const { outcome } = await deferredPrompt.userChoice;
-            console.log(`User response to the install prompt: ${outcome}`);
+            await window.deferredPrompt.prompt();
+            const { outcome } = await window.deferredPrompt.userChoice;
+            console.log(`Install prompt outcome: ${outcome}`);
             if (outcome === 'accepted') {
                 setInstallMode('hidden');
             }
-            // Chrome only allows prompt() once per event
-            setDeferredPrompt(null);
+            // Chrome only allows prompt() once per event, but we keep checking in case it was dismissed
             window.deferredPrompt = null; 
           } catch (e) {
             console.error("Install prompt failed", e);
@@ -220,14 +221,12 @@ const InstallAppFloating = () => {
           return;
       }
 
-      // Fallback handlers if native prompt is not available
-      if (installMode === 'ios') {
-          setShowIOSModal(true);
-      } else if (installMode === 'in-app') {
-          setShowInAppOverlay(true);
-      } else {
-          // Generic/Manual fallback (Android without native event)
-          setShowGenericModal(true);
+      // Fallbacks
+      switch (installMode) {
+          case 'ios': setShowIOSModal(true); break;
+          case 'in-app': setShowInAppOverlay(true); break;
+          case 'generic': setShowGenericModal(true); break;
+          default: break;
       }
   };
 
