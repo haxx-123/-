@@ -116,9 +116,9 @@ const SWUpdateToast = () => {
     );
 };
 
-// --- 27. InstallAppFloating (Final Fix) ---
+// --- 27. InstallAppFloating (Final Robust Fix) ---
 const InstallAppFloating = () => {
-  // 状态：是否捕获到了原生的安装事件
+  // 状态：是否捕获到了原生的安装事件 (对象)
   const [nativePromptEvent, setNativePromptEvent] = useState<any>(null);
   
   // 环境检测状态
@@ -138,26 +138,36 @@ const InstallAppFloating = () => {
     setIsInApp(/MicroMessenger|DingTalk/i.test(ua));
     setIsMobile(/Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua));
 
-    // 2. 核心：直接去拿 HTML 里存好的变量
-    const checkGlobalPrompt = () => {
+    // 2. 定义同步函数：尝试从全局变量读取
+    const syncPrompt = () => {
         // @ts-ignore
         if (window.deferredPrompt) {
-            console.log('[React] 成功读取到 HTML 层捕获的事件');
+            console.log('[React] 成功同步 PWA 安装事件');
             // @ts-ignore
             setNativePromptEvent(window.deferredPrompt);
-            return true;
         }
-        return false;
     };
 
-    // 立即检查一次
-    if (!checkGlobalPrompt()) {
-        // 为了保险，每500ms再查一次（防止HTML脚本执行慢了，虽然不太可能）
-        const timer = setInterval(() => {
-            if (checkGlobalPrompt()) clearInterval(timer);
-        }, 500);
-        return () => clearInterval(timer);
-    }
+    // 3. 立即检查一次 (应对 React 加载晚于事件的情况)
+    syncPrompt();
+
+    // 4. 监听自定义事件 (应对 React 加载早于事件的情况)
+    // 这是我们在 index.html 中新加的事件
+    window.addEventListener('pwa-install-ready', syncPrompt);
+
+    // 5. 监听原生事件作为兜底 (防止 index.html 脚本被跳过或其他异常)
+    const handleNative = (e: any) => {
+        e.preventDefault();
+        // @ts-ignore
+        window.deferredPrompt = e;
+        syncPrompt();
+    };
+    window.addEventListener('beforeinstallprompt', handleNative);
+
+    return () => {
+        window.removeEventListener('pwa-install-ready', syncPrompt);
+        window.removeEventListener('beforeinstallprompt', handleNative);
+    };
   }, []);
 
   // 3. 已安装/Standalone 模式检测 (隐藏按钮)
@@ -168,14 +178,15 @@ const InstallAppFloating = () => {
   if (isStandalone) return null;
 
   // 4. 显示逻辑
-  // 只要满足以下任一条件就显示：
-  // A. 捕获到了安装事件 (PC/Android)
-  // B. 是 iOS (需要弹窗指引)
-  // C. 是 In-App (需要弹窗指引)
-  // D. 是移动端 (如果没捕获到事件，也显示，点击后走 Generic 兜底)
+  // A. 如果捕获到原生事件，肯定显示 (PC/Android)
+  // B. 如果是 iOS，虽然没事件，但也显示按钮作为引导
+  // C. 如果是 InApp，显示引导
+  // D. 如果是其他移动端 (且没捕获到事件)，也显示按钮，点击后弹通用提示
+  // E. 如果是 PC 端且没捕获到事件 -> 隐藏 (不干扰用户)
   const shouldShow = !!nativePromptEvent || isIOS || isInApp || isMobile;
 
   // PC端如果没捕获到事件，坚决不显示 (防止出现无用的按钮)
+  // 移动端始终显示
   if (!shouldShow) return null;
 
   const handleClick = async () => {
@@ -205,7 +216,7 @@ const InstallAppFloating = () => {
       } else if (isIOS) {
           setShowIOSModal(true);
       } else {
-          // Android 兜底
+          // Android/其他 兜底
           setShowGenericModal(true);
       }
   };
