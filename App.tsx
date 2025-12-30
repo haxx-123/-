@@ -116,126 +116,105 @@ const SWUpdateToast = () => {
     );
 };
 
-// --- 27. InstallAppFloating (Cross-Platform Compatible) ---
+// --- 27. InstallAppFloating (Corrected Logic) ---
 const InstallAppFloating = () => {
-  // Modes: hidden, native (WebAPK), ios, in-app, generic (manual)
-  const [installMode, setInstallMode] = useState<'hidden' | 'native' | 'ios' | 'in-app' | 'generic'>('hidden');
+  // State for Install Capability
+  const [nativePromptAvailable, setNativePromptAvailable] = useState(false);
   
-  // UI States
+  // Environment Detection
+  const [isIOS, setIsIOS] = useState(false);
+  const [isInApp, setIsInApp] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  
+  // Modals
   const [showIOSModal, setShowIOSModal] = useState(false);
   const [showGenericModal, setShowGenericModal] = useState(false);
   const [showInAppOverlay, setShowInAppOverlay] = useState(false);
 
   useEffect(() => {
-    // 1. Guard: Check if already in Standalone Mode (Highest Priority)
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
-                         (window.navigator as any).standalone === true ||
-                         window.location.search.includes('source=pwa');
-                         
-    if (isStandalone) {
-        setInstallMode('hidden');
-        return; 
-    }
-
+    // 1. Environment Detection
     const ua = navigator.userAgent;
-    const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    const isInApp = /MicroMessenger|DingTalk/i.test(ua);
-    const isMobile = /Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+    const _isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const _isInApp = /MicroMessenger|DingTalk/i.test(ua);
+    const _isMobile = /Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+    
+    setIsIOS(_isIOS);
+    setIsInApp(_isInApp);
+    setIsMobile(_isMobile);
 
-    // Initial State Check
-    const init = () => {
-        // Priority 1: Native Prompt Available (Global Check)
+    // 2. Check for Native Prompt Availability
+    const checkPrompt = () => {
         if (window.deferredPrompt) {
-            console.log('[Install] Found deferredPrompt on mount');
-            setInstallMode('native');
-            return;
+            setNativePromptAvailable(true);
         }
-        
-        // Priority 2: In-App Browser
-        if (isInApp) {
-            setInstallMode('in-app');
-            return;
-        }
-
-        // Priority 3: iOS
-        if (isIOS) {
-            setInstallMode('ios');
-            return;
-        }
-
-        // Priority 4: Android/Mobile Fallback (Manual Guide)
-        // Note: If native prompt comes later, event listener will override this.
-        if (isMobile) {
-            setInstallMode('generic');
-            return;
-        }
-
-        // Priority 5: Desktop Default -> Hidden (Wait for event)
-        setInstallMode('hidden');
     };
 
-    init();
+    // Check immediately
+    checkPrompt();
 
-    // Event Listener: Listen for the CUSTOM event dispatched by index.tsx
-    // This fixes the race condition where index.tsx captures it before this component mounts.
-    const handlePWALoaded = () => {
-        console.log('[Install] Received pwa-install-ready event');
-        setInstallMode('native');
-    };
+    // Check on custom event from index.tsx
+    const handleReady = () => checkPrompt();
+    window.addEventListener('pwa-install-ready', handleReady);
 
-    window.addEventListener('pwa-install-ready', handlePWALoaded);
-
-    // Cleanup: App Installed
-    const handleAppInstalled = () => {
-        setInstallMode('hidden');
-        window.deferredPrompt = null;
-    };
-    window.addEventListener('appinstalled', handleAppInstalled);
+    // Polling fallback (Safety Net for Race Conditions)
+    const timer = setInterval(checkPrompt, 500);
 
     return () => {
-        window.removeEventListener('pwa-install-ready', handlePWALoaded);
-        window.removeEventListener('appinstalled', handleAppInstalled);
+        window.removeEventListener('pwa-install-ready', handleReady);
+        clearInterval(timer);
     };
   }, []);
 
+  // 3. Already Installed Check (Guard Clause)
+  // Ensure we don't show anything if running in standalone mode
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
+                       (window.navigator as any).standalone === true ||
+                       window.location.search.includes('source=pwa');
+
+  if (isStandalone) return null;
+
+  // 4. Visibility Logic
+  // - Show if Native Prompt is available (Desktop or Mobile)
+  // - Show if iOS (Always show manual guide)
+  // - Show if In-App (Always show overlay)
+  // - Show if Mobile (Fallback to manual guide if native not ready yet)
+  // - Hide if Desktop AND Native Prompt NOT available (Don't annoy desktop users with manual guides)
+  const shouldShow = nativePromptAvailable || isIOS || isInApp || isMobile;
+
+  if (!shouldShow) return null;
+
   const handleClick = async () => {
-      // Logic Fix: Always prioritize Native Prompt if available, regardless of current 'installMode' visual state
+      // Priority 1: Native Install
       if (window.deferredPrompt) {
           try {
-            console.log('[Install] Triggering native prompt');
-            await window.deferredPrompt.prompt();
-            const { outcome } = await window.deferredPrompt.userChoice;
-            console.log(`[Install] Outcome: ${outcome}`);
-            if (outcome === 'accepted') {
-                setInstallMode('hidden');
-            }
-            // Clear it
-            window.deferredPrompt = null; 
+              await window.deferredPrompt.prompt();
+              const { outcome } = await window.deferredPrompt.userChoice;
+              console.log(`Install prompt outcome: ${outcome}`);
+              // Clear prompt after use
+              window.deferredPrompt = null;
+              setNativePromptAvailable(false);
           } catch (e) {
-            console.error("[Install] Prompt failed", e);
+              console.error("Install prompt failed", e);
           }
           return;
       }
 
-      // Fallbacks if no native prompt
-      switch (installMode) {
-          case 'ios': setShowIOSModal(true); break;
-          case 'in-app': setShowInAppOverlay(true); break;
-          case 'generic': setShowGenericModal(true); break;
-          default: 
-            // If hidden or native (but no prompt obj), show generic as last resort
-            if(installMode !== 'hidden') setShowGenericModal(true);
-            break;
+      // Priority 2: Environment Specific Fallbacks
+      if (isInApp) {
+          setShowInAppOverlay(true);
+      } else if (isIOS) {
+          setShowIOSModal(true);
+      } else {
+          // Default/Android fallback
+          setShowGenericModal(true);
       }
   };
-
-  if (installMode === 'hidden') return null;
 
   const LOGO_URL = "https://i.ibb.co/vxq7QfYd/retouch-2025121423241826.png";
 
   return (
     <>
-      {/* 27.1.3 Container Z-Index 40, pointer-events-none */}
+      {/* Floating Button */}
       <div className="fixed top-20 right-4 z-40 pointer-events-none flex flex-col items-end gap-2 animate-bounce-slow">
          <motion.button
             initial={{ scale: 0 }}
@@ -244,13 +223,13 @@ const InstallAppFloating = () => {
             whileTap={{ scale: 0.9 }}
             onClick={handleClick}
             className="pointer-events-auto p-0 rounded-2xl shadow-xl shadow-blue-500/30 overflow-hidden border-2 border-white/20"
-            title={installMode === 'native' ? "点击安装" : "添加到主屏幕"}
+            title="安装应用"
          >
-            <img src={LOGO_URL} alt="Install" className={`object-cover ${installMode === 'generic' || installMode === 'ios' ? 'w-10 h-10' : 'w-12 h-12'}`} />
+            <img src={LOGO_URL} alt="Install" className="w-12 h-12 object-cover" />
          </motion.button>
       </div>
 
-      {/* 27.2.4 iOS Modal */}
+      {/* iOS Modal */}
       {showIOSModal && (
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in" onClick={() => setShowIOSModal(false)}>
            <div className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative animate-slide-up border border-gray-100 dark:border-gray-700" onClick={e => e.stopPropagation()}>
@@ -268,7 +247,7 @@ const InstallAppFloating = () => {
         </div>
       )}
 
-      {/* 27.2.5 Generic Android Modal */}
+      {/* Generic/Android Manual Modal */}
       {showGenericModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in" onClick={() => setShowGenericModal(false)}>
            <div className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative animate-scale-in" onClick={e => e.stopPropagation()}>
@@ -276,8 +255,8 @@ const InstallAppFloating = () => {
                  <MoreVertical className="w-12 h-12 text-gray-500 mb-4" />
                  <h3 className="text-lg font-bold mb-2 dark:text-white">安装到主屏幕</h3>
                  <p className="text-sm text-gray-500 mb-6 leading-relaxed">
-                    检测到当前浏览器不支持自动安装。<br/>
-                    请点击浏览器菜单栏（通常在顶部或底部），选择 <span className="font-bold text-gray-800 dark:text-gray-200">“添加到主屏幕”</span> 或 <span className="font-bold">“添加快捷方式”</span> 即可获得 App 体验。
+                    若未自动弹出安装提示：<br/>
+                    请点击浏览器菜单栏（通常在顶部或底部），选择 <span className="font-bold text-gray-800 dark:text-gray-200">“添加到主屏幕”</span> 或 <span className="font-bold">“安装应用”</span>。
                  </p>
                  <button onClick={() => setShowGenericModal(false)} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold">知道了</button>
               </div>
@@ -285,7 +264,7 @@ const InstallAppFloating = () => {
         </div>
       )}
 
-      {/* 27.2.2 In-App Overlay (WeChat/DingTalk) */}
+      {/* In-App Overlay */}
       {showInAppOverlay && (
           <div className="fixed inset-0 z-[100] bg-black/90 flex flex-col items-end p-5 animate-fade-in" onClick={() => setShowInAppOverlay(false)}>
               <div className="flex flex-col items-end gap-2">

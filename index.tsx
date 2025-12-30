@@ -8,6 +8,7 @@ import App from './App';
 // This must happen before anything else to catch the event early
 // @ts-ignore
 window.deferredPrompt = null;
+
 window.addEventListener('beforeinstallprompt', (e) => {
   // 1. Prevent the mini-infobar from appearing on mobile
   e.preventDefault();
@@ -15,11 +16,10 @@ window.addEventListener('beforeinstallprompt', (e) => {
   // @ts-ignore
   window.deferredPrompt = e;
   
-  // 3. 【核心修复】广播自定义事件，通知 React 组件更新状态
-  // 解决了组件加载晚于事件触发导致的状态不同步问题
+  // 3. Broadcast custom event for React components
   window.dispatchEvent(new Event('pwa-install-ready'));
   
-  console.log('[Global] PWA install prompt event captured & broadcasted!');
+  console.log('[Global] PWA install prompt event captured!');
 });
 // --- 关键新增代码 END ---
 
