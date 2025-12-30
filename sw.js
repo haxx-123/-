@@ -1,20 +1,22 @@
 
-const CACHE_NAME = 'stockwise-v10-offline';
+const CACHE_NAME = 'stockwise-v11-offline';
 const URLS_TO_CACHE = [
   '/',
   '/index.html',
   '/manifest.json',
-  // 26.1.4 Cache specific external assets required for PWA
-  'https://i.ibb.co/93cvPv7p/maskable-icon-x192.png',
-  'https://i.ibb.co/HLWPZQNX/maskable-icon-x512.png',
-  'https://i.ibb.co/vxq7QfYd/retouch-2025121423241826.png'
+  // Local icons for offline PWA support (26.1.5.2)
+  '/icons/icon-192.png',
+  '/icons/icon-512.png'
 ];
 
 // 26.1.3 Service Worker Logic
 self.addEventListener('install', (event) => {
-    console.log('[SW] Installing v10...');
-    // We do NOT force skipWaiting here immediately if we want the "Update Toast" flow.
-    // The user will click the toast to trigger skipWaiting via message.
+    console.log('[SW] Installing v11 (Forced Activation)...');
+    
+    // Force Immediate Activation (Skipping Wait)
+    // This ensures the SW takes control immediately for the first install or update.
+    self.skipWaiting();
+
     event.waitUntil(
         caches.open(CACHE_NAME).then((cache) => {
             return cache.addAll(URLS_TO_CACHE).catch(err => {
@@ -25,8 +27,8 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-    console.log('[SW] Activating v10...');
-    event.waitUntil(clients.claim());
+    console.log('[SW] Activating v11...');
+    event.waitUntil(clients.claim()); // Take control immediately
     event.waitUntil(
         caches.keys().then((cacheNames) => {
             return Promise.all(
@@ -41,25 +43,18 @@ self.addEventListener('activate', (event) => {
     );
 });
 
-// Message Handler for Skip Waiting (Triggered by UI Toast)
-self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
-  }
-});
-
 // 26.1.4 Caching Strategy
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
 
     // 1. API Requests (Supabase): Network Only (Ensure real-time inventory)
     if (url.pathname.startsWith('/api') || url.hostname.includes('supabase')) {
-        return;
+        return; 
     }
 
     // 2. Static Assets (JS/CSS/Images): Cache First
-    // matches local assets or the specific external images we cached
-    if (url.pathname.match(/\.(js|css|png|jpg|jpeg|svg|ico)$/) || URLS_TO_CACHE.includes(event.request.url)) {
+    // matches local assets or specific files
+    if (url.pathname.match(/\.(js|css|png|jpg|jpeg|svg|ico)$/)) {
         event.respondWith(
             caches.match(event.request).then((response) => {
                 return response || fetch(event.request);
@@ -78,4 +73,8 @@ self.addEventListener('fetch', (event) => {
         );
         return;
     }
+
+    // 4. Default Fallback
+    // Explicitly allow network for anything else not caught above
+    return; 
 });

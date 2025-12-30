@@ -86,46 +86,19 @@ const LoadingScreen = () => (
 // --- 26.1.3 Service Worker Update Toast ---
 const SWUpdateToast = () => {
     const [show, setShow] = useState(false);
-    const [wb, setWb] = useState<ServiceWorkerRegistration | null>(null);
 
     useEffect(() => {
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.getRegistration().then(reg => {
-                if (reg) {
-                    setWb(reg);
-                    // Check if waiting
-                    if (reg.waiting) setShow(true);
-                    
-                    reg.addEventListener('updatefound', () => {
-                        const newWorker = reg.installing;
-                        if (newWorker) {
-                            newWorker.addEventListener('statechange', () => {
-                                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                                    setShow(true);
-                                }
-                            });
-                        }
-                    });
-                }
-            });
-
-            let refreshing = false;
+            // Since we use self.skipWaiting() in SW, we listen for controller change
             navigator.serviceWorker.addEventListener('controllerchange', () => {
-                if (!refreshing) {
-                    window.location.reload();
-                    refreshing = true;
-                }
+                // New SW has taken control
+                setShow(true);
             });
         }
     }, []);
 
-    const update = () => {
-        if (wb && wb.waiting) {
-            wb.waiting.postMessage({ type: 'SKIP_WAITING' });
-            setShow(false);
-        } else {
-            window.location.reload();
-        }
+    const handleReload = () => {
+        window.location.reload();
     };
 
     if (!show) return null;
@@ -133,7 +106,7 @@ const SWUpdateToast = () => {
     return (
         <div className="fixed bottom-20 left-1/2 transform -translate-x-1/2 z-[100] animate-bounce-slow w-max">
             <button 
-                onClick={update}
+                onClick={handleReload}
                 className="bg-blue-600 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-2 font-bold hover:bg-blue-700 transition-colors border-2 border-white/20"
             >
                 <RefreshCw className="w-5 h-5 animate-spin" />
@@ -245,6 +218,7 @@ const InstallAppFloating = () => {
 
   if (installMode === 'hidden') return null;
 
+  // 27.1.2 Use Specific Logo for the button itself (NOT the manifest icons)
   const LOGO_URL = "https://i.ibb.co/vxq7QfYd/retouch-2025121423241826.png";
 
   return (
@@ -260,7 +234,6 @@ const InstallAppFloating = () => {
             className="pointer-events-auto p-0 rounded-2xl shadow-xl shadow-blue-500/30 overflow-hidden border-2 border-white/20"
             title="安装应用"
          >
-            {/* 27.1.2 Use Specific Logo */}
             <img src={LOGO_URL} alt="Install" className={`object-cover ${installMode === 'generic' || installMode === 'ios' ? 'w-10 h-10' : 'w-12 h-12'}`} />
          </motion.button>
       </div>
