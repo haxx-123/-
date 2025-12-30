@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="zh-CN">
   <head>
@@ -196,6 +197,19 @@
 </head>
   <body>
     <div id="root"></div>
+    <script>
+      // 初始化全局变量
+      window.deferredPrompt = null;
+      
+      // 立即监听，不错过任何时机
+      window.addEventListener('beforeinstallprompt', function(e) {
+        // 1. 阻止 Chrome 67+ 自动显示底部横幅
+        e.preventDefault();
+        // 2. 将事件保存到全局变量，供 React 组件稍后使用
+        window.deferredPrompt = e;
+        console.log('[HTML] 成功捕获 PWA 安装事件 (beforeinstallprompt)');
+      });
+    </script>
     <script type="module" src="/index.tsx"></script>
   </body>
 </html>

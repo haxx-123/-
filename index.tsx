@@ -3,26 +3,6 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 
-// --- 关键新增代码 START ---
-// Global capture of install prompt
-// This must happen before anything else to catch the event early
-// @ts-ignore
-window.deferredPrompt = null;
-
-window.addEventListener('beforeinstallprompt', (e) => {
-  // 1. Prevent the mini-infobar from appearing on mobile
-  e.preventDefault();
-  // 2. Stash the event so it can be triggered later.
-  // @ts-ignore
-  window.deferredPrompt = e;
-  
-  // 3. Broadcast custom event for React components
-  window.dispatchEvent(new Event('pwa-install-ready'));
-  
-  console.log('[Global] PWA install prompt event captured!');
-});
-// --- 关键新增代码 END ---
-
 const rootElement = document.getElementById('root');
 if (!rootElement) {
   throw new Error("Could not find root element to mount to");
