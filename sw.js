@@ -1,30 +1,28 @@
 
-const CACHE_NAME = 'stockwise-v7-offline';
+const CACHE_NAME = 'stockwise-v8-offline';
 const URLS_TO_CACHE = [
   '/',
   '/index.html',
   '/manifest.json'
 ];
 
-// 1. INSTALL: Cache core assets to pass PWA "offline capability" check
+// 1. INSTALL
 self.addEventListener('install', (event) => {
-    console.log('[SW] Installing v7...');
-    self.skipWaiting();
-    
-    event.waitUntil(
-        caches.open(CACHE_NAME).then((cache) => {
-            console.log('[SW] Caching core files');
-            // We use a catch block here so one missing file doesn't break the whole install
-            return cache.addAll(URLS_TO_CACHE).catch(err => {
-                console.warn('[SW] Caching warning (non-fatal):', err);
-            });
-        })
-    );
+    console.log('[SW] Installing v8...');
+    // We do NOT call skipWaiting() automatically here to avoid disrupting active sessions.
+    // Instead, we wait for the client to send a SKIP_WAITING message via the Update Toast.
 });
 
-// 2. ACTIVATE: Cleanup old caches and claim clients
+// Message handler for manual skipWaiting
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
+// 2. ACTIVATE
 self.addEventListener('activate', (event) => {
-    console.log('[SW] Activating v7...');
+    console.log('[SW] Activating v8...');
     event.waitUntil(clients.claim());
     
     event.waitUntil(
@@ -41,17 +39,16 @@ self.addEventListener('activate', (event) => {
     );
 });
 
-// 3. FETCH: Network First, falling back to Cache, falling back to /index.html (SPA)
+// 3. FETCH
 self.addEventListener('fetch', (event) => {
+    // 26.1.4 Cache Strategy: Network First for critical content
     event.respondWith(
         fetch(event.request)
         .catch(() => {
-            // Network failed, try cache
             return caches.match(event.request).then((response) => {
                 if (response) {
                     return response;
                 }
-                // If asking for a page (navigation) and not in cache, return index.html
                 if (event.request.mode === 'navigate') {
                     return caches.match('/index.html');
                 }
