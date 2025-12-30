@@ -116,7 +116,7 @@ const SWUpdateToast = () => {
     );
 };
 
-// --- 27. InstallAppFloating (Final Robust Fix) ---
+// --- 27. InstallAppFloating (Enhanced Robust Fix) ---
 const InstallAppFloating = () => {
   // 状态：是否捕获到了原生的安装事件 (对象)
   const [nativePromptEvent, setNativePromptEvent] = useState<any>(null);
@@ -130,13 +130,18 @@ const InstallAppFloating = () => {
   const [showIOSModal, setShowIOSModal] = useState(false);
   const [showGenericModal, setShowGenericModal] = useState(false);
   const [showInAppOverlay, setShowInAppOverlay] = useState(false);
+  const [showDesktopModal, setShowDesktopModal] = useState(false); // 新增：桌面端引导
 
   useEffect(() => {
     // 1. 初始化环境检测
     const ua = navigator.userAgent;
-    setIsIOS(/iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
-    setIsInApp(/MicroMessenger|DingTalk/i.test(ua));
-    setIsMobile(/Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua));
+    const _isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const _isInApp = /MicroMessenger|DingTalk/i.test(ua);
+    const _isMobile = /Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua) || _isIOS;
+    
+    setIsIOS(_isIOS);
+    setIsInApp(_isInApp);
+    setIsMobile(_isMobile);
 
     // 2. 定义同步函数：尝试从全局变量读取
     const syncPrompt = () => {
@@ -148,14 +153,13 @@ const InstallAppFloating = () => {
         }
     };
 
-    // 3. 立即检查一次 (应对 React 加载晚于事件的情况)
+    // 3. 立即检查一次
     syncPrompt();
 
-    // 4. 监听自定义事件 (应对 React 加载早于事件的情况)
-    // 这是我们在 index.html 中新加的事件
+    // 4. 监听自定义事件
     window.addEventListener('pwa-install-ready', syncPrompt);
 
-    // 5. 监听原生事件作为兜底 (防止 index.html 脚本被跳过或其他异常)
+    // 5. 监听原生事件作为兜底
     const handleNative = (e: any) => {
         e.preventDefault();
         // @ts-ignore
@@ -164,9 +168,15 @@ const InstallAppFloating = () => {
     };
     window.addEventListener('beforeinstallprompt', handleNative);
 
+    // 6. 【关键】暴力轮询：前5秒内不断检查，防止 race condition
+    const timer = setInterval(syncPrompt, 500);
+    const timeout = setTimeout(() => clearInterval(timer), 5000);
+
     return () => {
         window.removeEventListener('pwa-install-ready', syncPrompt);
         window.removeEventListener('beforeinstallprompt', handleNative);
+        clearInterval(timer);
+        clearTimeout(timeout);
     };
   }, []);
 
@@ -177,16 +187,10 @@ const InstallAppFloating = () => {
 
   if (isStandalone) return null;
 
-  // 4. 显示逻辑
-  // A. 如果捕获到原生事件，肯定显示 (PC/Android)
-  // B. 如果是 iOS，虽然没事件，但也显示按钮作为引导
-  // C. 如果是 InApp，显示引导
-  // D. 如果是其他移动端 (且没捕获到事件)，也显示按钮，点击后弹通用提示
-  // E. 如果是 PC 端且没捕获到事件 -> 隐藏 (不干扰用户)
-  const shouldShow = !!nativePromptEvent || isIOS || isInApp || isMobile;
+  // 4. 显示逻辑 - 始终显示，作为手动入口
+  // 即使没有捕获到事件，也允许用户点击查看“如何安装”
+  const shouldShow = true;
 
-  // PC端如果没捕获到事件，坚决不显示 (防止出现无用的按钮)
-  // 移动端始终显示
   if (!shouldShow) return null;
 
   const handleClick = async () => {
@@ -196,7 +200,6 @@ const InstallAppFloating = () => {
               await nativePromptEvent.prompt();
               const { outcome } = await nativePromptEvent.userChoice;
               console.log(`Install outcome: ${outcome}`);
-              // 如果用户安装了，清空事件
               if (outcome === 'accepted') {
                   setNativePromptEvent(null);
                   // @ts-ignore
@@ -204,20 +207,22 @@ const InstallAppFloating = () => {
               }
           } catch (e) {
               console.error("Install failed", e);
-              // 出错也弹出引导
               setShowGenericModal(true);
           }
           return;
       }
 
-      // 环境降级处理
+      // 环境降级处理 - 如果没有事件
       if (isInApp) {
           setShowInAppOverlay(true);
       } else if (isIOS) {
           setShowIOSModal(true);
-      } else {
-          // Android/其他 兜底
+      } else if (isMobile) {
+          // Android/其他移动端 兜底
           setShowGenericModal(true);
+      } else {
+          // 桌面端 兜底
+          setShowDesktopModal(true);
       }
   };
 
@@ -232,8 +237,8 @@ const InstallAppFloating = () => {
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
             onClick={handleClick}
-            className="pointer-events-auto p-0 rounded-2xl shadow-xl shadow-blue-500/30 overflow-hidden border-2 border-white/20"
-            title="安装应用"
+            className="pointer-events-auto p-0 rounded-2xl shadow-xl shadow-blue-500/30 overflow-hidden border-2 border-white/20 bg-white"
+            title="安装应用 / Install App"
          >
             <img src={LOGO_URL} alt="Install" className="w-12 h-12 object-cover" />
          </motion.button>
@@ -256,7 +261,7 @@ const InstallAppFloating = () => {
         </div>
       )}
 
-      {/* Generic Modal (Android Fallback) */}
+      {/* Generic Mobile Modal (Android Fallback) */}
       {showGenericModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in" onClick={() => setShowGenericModal(false)}>
            <div className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative animate-scale-in" onClick={e => e.stopPropagation()}>
@@ -268,6 +273,24 @@ const InstallAppFloating = () => {
                     请点击浏览器菜单栏（通常在右上角三个点），手动选择 <span className="font-bold text-gray-800 dark:text-gray-200">“安装应用”</span> 或 <span className="font-bold">“添加到主屏幕”</span>。
                  </p>
                  <button onClick={() => setShowGenericModal(false)} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold">知道了</button>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* Desktop Modal (Chrome/Edge Fallback) */}
+      {showDesktopModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in" onClick={() => setShowDesktopModal(false)}>
+           <div className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative animate-scale-in" onClick={e => e.stopPropagation()}>
+              <div className="flex flex-col items-center text-center">
+                 <Laptop className="w-12 h-12 text-blue-500 mb-4" />
+                 <h3 className="text-lg font-bold mb-2 dark:text-white">安装到电脑桌面</h3>
+                 <p className="text-sm text-gray-500 mb-6 leading-relaxed text-left">
+                    如果未自动弹出安装提示：<br/>
+                    1. 请查看浏览器 <span className="font-bold">地址栏右侧</span> 是否有 <span className="inline-block border p-0.5 rounded text-xs bg-gray-100">安装</span> 图标。<br/>
+                    2. 或点击浏览器右上角 <span className="font-bold">•••</span> 菜单，选择 <span className="font-bold">“安装 棱镜...”</span>。
+                 </p>
+                 <button onClick={() => setShowDesktopModal(false)} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold">知道了</button>
               </div>
            </div>
         </div>

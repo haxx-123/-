@@ -37,6 +37,23 @@
         }
       }
     </script>
+    <script>
+      // 核心 PWA 事件捕获逻辑 - 移至 Head 确保最先执行
+      window.deferredPrompt = null;
+      
+      window.addEventListener('beforeinstallprompt', function(e) {
+        // 1. 阻止浏览器默认的底部横幅，以便我们稍后手动触发
+        e.preventDefault();
+        
+        // 2. 将事件保存到全局变量
+        window.deferredPrompt = e;
+        
+        // 3. 立即派发一个自定义事件，通知 React 组件
+        window.dispatchEvent(new Event('pwa-install-ready'));
+        
+        console.log('[HTML] PWA Event Captured & Dispatched (pwa-install-ready)');
+      });
+    </script>
     <style>
       /* 35.2 CSS Variables Mapping */
       
@@ -197,24 +214,6 @@
 </head>
   <body>
     <div id="root"></div>
-    <script>
-      // 核心 PWA 事件捕获逻辑
-      window.deferredPrompt = null;
-      
-      window.addEventListener('beforeinstallprompt', function(e) {
-        // 1. 阻止浏览器默认的底部横幅，以便我们稍后手动触发
-        e.preventDefault();
-        
-        // 2. 将事件保存到全局变量
-        window.deferredPrompt = e;
-        
-        // 3. 【关键修改】立即派发一个自定义事件，通知 React 组件
-        // 这样即使 React 加载晚了，或者轮询失效，事件监听也能捕获到
-        window.dispatchEvent(new Event('pwa-install-ready'));
-        
-        console.log('[HTML] PWA Event Captured & Dispatched (pwa-install-ready)');
-      });
-    </script>
     <script type="module" src="/index.tsx"></script>
   </body>
 </html>
