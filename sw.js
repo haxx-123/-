@@ -1,24 +1,22 @@
-const CACHE_NAME = 'stockwise-v3-minimal';
+// Force a new version to kick out the stuck worker
+const CACHE_NAME = 'stockwise-v4-emergency-fix';
 
-// 1. INSTALL: Do NOT cache anything critical here. Just install immediately.
+// 1. INSTALL: Do absolutely NOTHING complex. Just skip waiting.
 self.addEventListener('install', (event) => {
-    // Skip waiting to force the new SW to become active immediately
+    console.log('SW: Force installing...');
     self.skipWaiting();
-    console.log('SW: Installed (Minimal Version)');
 });
 
-// 2. ACTIVATE: Take control of all clients immediately
+// 2. ACTIVATE: Claim clients immediately.
 self.addEventListener('activate', (event) => {
     event.waitUntil(clients.claim());
-    console.log('SW: Activated and claiming clients');
+    console.log('SW: Activated!');
 });
 
-// 3. FETCH: Basic Network-First Strategy
+// 3. FETCH: Simple Network-First strategy
 self.addEventListener('fetch', (event) => {
     event.respondWith(
         fetch(event.request)
-        .catch(() => {
-            return caches.match(event.request);
-        })
+        .catch(() => caches.match(event.request))
     );
 });
