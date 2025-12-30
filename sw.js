@@ -4,10 +4,9 @@ const URLS_TO_CACHE = [
   '/',
   '/index.html',
   '/manifest.json',
-  // Caching the icons defined in manifest.json to ensure offline availability
-  // These must match the src in manifest.json exactly to avoid 404s during install
-  'https://i.ibb.co/93cvPv7p/maskable-icon-x192.png',
-  'https://i.ibb.co/HLWPZQNX/maskable-icon-x512.png'
+  // Local icons for offline PWA support
+  '/icons/icon-192.png',
+  '/icons/icon-512.png'
 ];
 
 // 26.1.3 Service Worker Logic
