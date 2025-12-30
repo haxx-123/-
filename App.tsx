@@ -116,31 +116,35 @@ const SWUpdateToast = () => {
     );
 };
 
-// --- 27. InstallAppFloating (HTML-Trap Fix) ---
+// --- 27. InstallAppFloating (Final Fix) ---
 const InstallAppFloating = () => {
-  const [installable, setInstallable] = useState(false);
+  // 状态：是否捕获到了原生的安装事件
+  const [nativePromptEvent, setNativePromptEvent] = useState<any>(null);
+  
+  // 环境检测状态
   const [isIOS, setIsIOS] = useState(false);
   const [isInApp, setIsInApp] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   
-  // Modals
+  // 模态框显示状态
   const [showIOSModal, setShowIOSModal] = useState(false);
   const [showGenericModal, setShowGenericModal] = useState(false);
   const [showInAppOverlay, setShowInAppOverlay] = useState(false);
 
   useEffect(() => {
-    // 1. 环境检测
+    // 1. 初始化环境检测
     const ua = navigator.userAgent;
     setIsIOS(/iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
     setIsInApp(/MicroMessenger|DingTalk/i.test(ua));
     setIsMobile(/Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua));
 
-    // 2. 核心：检查 HTML 层是否已经捕获了事件
+    // 2. 核心：直接去拿 HTML 里存好的变量
     const checkGlobalPrompt = () => {
         // @ts-ignore
         if (window.deferredPrompt) {
-            console.log('[React] 发现 HTML 层已捕获的事件');
-            setInstallable(true);
+            console.log('[React] 成功读取到 HTML 层捕获的事件');
+            // @ts-ignore
+            setNativePromptEvent(window.deferredPrompt);
             return true;
         }
         return false;
@@ -148,17 +152,11 @@ const InstallAppFloating = () => {
 
     // 立即检查一次
     if (!checkGlobalPrompt()) {
-        // 如果 React 加载极快（或事件触发极慢），可能还没捕获到。
-        // 为了双重保险，这里再加一个监听器（通常用不到，但为了健壮性）
-        const handleLateEvent = (e: any) => {
-            e.preventDefault();
-            // @ts-ignore
-            window.deferredPrompt = e;
-            setInstallable(true);
-            console.log('[React] 组件内捕获到迟到的事件');
-        };
-        window.addEventListener('beforeinstallprompt', handleLateEvent);
-        return () => window.removeEventListener('beforeinstallprompt', handleLateEvent);
+        // 为了保险，每500ms再查一次（防止HTML脚本执行慢了，虽然不太可能）
+        const timer = setInterval(() => {
+            if (checkGlobalPrompt()) clearInterval(timer);
+        }, 500);
+        return () => clearInterval(timer);
     }
   }, []);
 
@@ -175,37 +173,39 @@ const InstallAppFloating = () => {
   // B. 是 iOS (需要弹窗指引)
   // C. 是 In-App (需要弹窗指引)
   // D. 是移动端 (如果没捕获到事件，也显示，点击后走 Generic 兜底)
-  const shouldShow = installable || isIOS || isInApp || isMobile;
+  const shouldShow = !!nativePromptEvent || isIOS || isInApp || isMobile;
 
   // PC端如果没捕获到事件，坚决不显示 (防止出现无用的按钮)
   if (!shouldShow) return null;
 
   const handleClick = async () => {
-      // 优先尝试原生安装
-      // @ts-ignore
-      if (window.deferredPrompt) {
+      // 优先处理原生安装
+      if (nativePromptEvent) {
           try {
-            // @ts-ignore
-            await window.deferredPrompt.prompt();
-            // @ts-ignore
-            const { outcome } = await window.deferredPrompt.userChoice;
-            console.log(`Install prompt outcome: ${outcome}`);
-            // @ts-ignore
-            window.deferredPrompt = null;
-            setInstallable(false);
+              await nativePromptEvent.prompt();
+              const { outcome } = await nativePromptEvent.userChoice;
+              console.log(`Install outcome: ${outcome}`);
+              // 如果用户安装了，清空事件
+              if (outcome === 'accepted') {
+                  setNativePromptEvent(null);
+                  // @ts-ignore
+                  window.deferredPrompt = null;
+              }
           } catch (e) {
-            console.error("Install prompt failed", e);
+              console.error("Install failed", e);
+              // 出错也弹出引导
+              setShowGenericModal(true);
           }
           return;
       }
 
-      // 降级处理
+      // 环境降级处理
       if (isInApp) {
           setShowInAppOverlay(true);
       } else if (isIOS) {
           setShowIOSModal(true);
       } else {
-          // 只有在是移动端(isMobile)但没有捕获到事件时，才弹这个
+          // Android 兜底
           setShowGenericModal(true);
       }
   };
@@ -214,7 +214,6 @@ const InstallAppFloating = () => {
 
   return (
     <>
-      {/* 悬浮按钮 UI */}
       <div className="fixed top-20 right-4 z-40 pointer-events-none flex flex-col items-end gap-2 animate-bounce-slow">
          <motion.button
             initial={{ scale: 0 }}
@@ -229,7 +228,7 @@ const InstallAppFloating = () => {
          </motion.button>
       </div>
 
-      {/* Modal Components */}
+      {/* iOS Modal */}
       {showIOSModal && (
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in" onClick={() => setShowIOSModal(false)}>
            <div className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative animate-slide-up border border-gray-100 dark:border-gray-700" onClick={e => e.stopPropagation()}>
@@ -242,11 +241,11 @@ const InstallAppFloating = () => {
                  </p>
                  <button onClick={() => setShowIOSModal(false)} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold">知道了</button>
               </div>
-              <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 w-4 h-4 bg-white dark:bg-gray-800 rotate-45 sm:hidden"></div>
            </div>
         </div>
       )}
 
+      {/* Generic Modal (Android Fallback) */}
       {showGenericModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in" onClick={() => setShowGenericModal(false)}>
            <div className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative animate-scale-in" onClick={e => e.stopPropagation()}>
@@ -254,8 +253,8 @@ const InstallAppFloating = () => {
                  <MoreVertical className="w-12 h-12 text-gray-500 mb-4" />
                  <h3 className="text-lg font-bold mb-2 dark:text-white">安装到主屏幕</h3>
                  <p className="text-sm text-gray-500 mb-6 leading-relaxed">
-                    浏览器未触发自动安装。<br/>
-                    请点击浏览器菜单栏（通常在右上角），选择 <span className="font-bold text-gray-800 dark:text-gray-200">“安装应用”</span> 或 <span className="font-bold">“添加到主屏幕”</span>。
+                    浏览器未自动弹出安装请求。<br/>
+                    请点击浏览器菜单栏（通常在右上角三个点），手动选择 <span className="font-bold text-gray-800 dark:text-gray-200">“安装应用”</span> 或 <span className="font-bold">“添加到主屏幕”</span>。
                  </p>
                  <button onClick={() => setShowGenericModal(false)} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold">知道了</button>
               </div>
@@ -263,6 +262,7 @@ const InstallAppFloating = () => {
         </div>
       )}
 
+      {/* In-App Overlay */}
       {showInAppOverlay && (
           <div className="fixed inset-0 z-[100] bg-black/90 flex flex-col items-end p-5 animate-fade-in" onClick={() => setShowInAppOverlay(false)}>
               <div className="flex flex-col items-end gap-2">
