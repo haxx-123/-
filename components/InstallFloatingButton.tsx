@@ -1,12 +1,13 @@
 
 import React, { useEffect, useState } from 'react';
-import { Download, X, Share, MoreVertical, ArrowUp, Smartphone, Monitor } from 'lucide-react';
+import { Download, X, Share, MoreVertical, ArrowUp, Smartphone, Monitor, Check } from 'lucide-react';
 
 export const InstallFloatingButton: React.FC = () => {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isIOS, setIsIOS] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(false);
 
   useEffect(() => {
     // 1. 检测设备类型
@@ -15,36 +16,41 @@ export const InstallFloatingButton: React.FC = () => {
     setIsIOS(isIosDevice);
 
     // 2. 检测是否已安装 (Standalone 模式)
-    const isInStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
-    if (isInStandaloneMode) {
-      setIsStandalone(true);
-    }
+    const checkStandalone = () => {
+        const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || 
+                               (window.navigator as any).standalone || 
+                               document.referrer.includes('android-app://');
+        setIsStandalone(isStandaloneMode);
+    };
+    checkStandalone();
+    window.matchMedia('(display-mode: standalone)').addEventListener('change', checkStandalone);
 
     // 3. 监听自动安装事件 (Android/Desktop)
-    // 优先使用 window 上已捕获的事件（解决 React 加载时差问题）
     if (window.deferredPrompt) {
         setDeferredPrompt(window.deferredPrompt);
-        console.log("[React] Loaded existing PWA prompt");
     }
 
     const handleBeforeInstallPrompt = (e: any) => {
-      e.preventDefault(); // 阻止浏览器默认横幅
+      e.preventDefault(); // 阻止默认横幅
       setDeferredPrompt(e);
       window.deferredPrompt = e;
-      console.log("[React] PWA Install Prompt captured!");
+      console.log("[PWA] Capture Event Success");
+    };
+
+    const handleAppInstalled = () => {
+        setDeferredPrompt(null);
+        window.deferredPrompt = null;
+        setIsInstalled(true);
+        setShowGuide(false);
+        setTimeout(() => setIsInstalled(false), 3000); // Hide success msg after 3s
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-
-    window.addEventListener('appinstalled', () => {
-        setDeferredPrompt(null);
-        window.deferredPrompt = null;
-        setShowGuide(false);
-        alert("应用安装成功！");
-    });
+    window.addEventListener('appinstalled', handleAppInstalled);
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
     };
   }, []);
 
@@ -52,7 +58,7 @@ export const InstallFloatingButton: React.FC = () => {
 
   const handleInstallClick = async () => {
     if (deferredPrompt) {
-      // 浏览器支持自动安装，直接触发原生弹窗
+      // 浏览器支持自动安装
       deferredPrompt.prompt();
       const { outcome } = await deferredPrompt.userChoice;
       if (outcome === 'accepted') {
@@ -60,7 +66,7 @@ export const InstallFloatingButton: React.FC = () => {
         window.deferredPrompt = null;
       }
     } else {
-      // 不支持自动安装（iOS 或 桌面端被拦截），显示手动指引
+      // 不支持自动安装 (iOS 或 桌面端拦截/不支持)，显示指引
       setShowGuide(true);
     }
   };
@@ -68,14 +74,24 @@ export const InstallFloatingButton: React.FC = () => {
   return (
     <>
       {/* 悬浮安装按钮 */}
-      <button
-        onClick={handleInstallClick}
-        className="fixed bottom-24 right-4 z-50 flex items-center gap-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white px-4 py-3 rounded-full shadow-lg hover:scale-105 transition-transform font-bold active:scale-95 border-2 border-white/20"
-        style={{ boxShadow: '0 4px 20px rgba(37, 99, 235, 0.4)' }}
-      >
-        <Download size={20} />
-        <span>安装应用</span>
-      </button>
+      {!isInstalled && (
+          <button
+            onClick={handleInstallClick}
+            className="fixed bottom-24 right-4 z-50 flex items-center gap-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white px-4 py-3 rounded-full shadow-lg hover:scale-105 transition-transform font-bold active:scale-95 border-2 border-white/20"
+            style={{ boxShadow: '0 4px 20px rgba(37, 99, 235, 0.4)' }}
+          >
+            <Download size={20} />
+            <span>安装应用</span>
+          </button>
+      )}
+
+      {/* 安装成功提示 */}
+      {isInstalled && (
+          <div className="fixed bottom-24 right-4 z-50 bg-green-500 text-white px-6 py-3 rounded-full shadow-xl flex items-center gap-2 animate-bounce">
+              <Check size={20} />
+              <span>安装成功！</span>
+          </div>
+      )}
 
       {/* 美化版安装指引弹窗 */}
       {showGuide && (
