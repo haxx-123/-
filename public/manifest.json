@@ -1,54 +1,25 @@
 {
-  "name": "棱镜库存管理",
-  "short_name": "棱镜库存",
-  "id": "/",
+  "name": "棱镜",
+  "short_name": "棱镜",
+  "description": "StockWise-智能库管系统",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#ffffff",
+  "background_color": "#F2F3F7",
+  "theme_color": "#F2F3F7",
   "orientation": "portrait",
   "scope": "/",
-  "description": "StockWise 智能库管系统",
   "icons": [
     {
       "src": "/icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "maskable"
+      "purpose": "any maskable"
     },
     {
       "src": "/icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
-    }
-  ],
-  "screenshots": [
-    {
-      "src": "https://i.ibb.co/vxq7QfYd/retouch-2025121423241826.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "form_factor": "wide",
-      "label": "Desktop View"
-    },
-    {
-      "src": "https://i.ibb.co/vxq7QfYd/retouch-2025121423241826.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "form_factor": "narrow",
-      "label": "Mobile View"
+      "purpose": "any maskable"
     }
   ]
 }

@@ -12,15 +12,14 @@ import html2canvas from 'html2canvas';
 import * as XLSX from 'xlsx';
 
 import { ThemeMode, RoleLevel, User, Store, Product, OperationLog, LoginRecord, Announcement } from './types';
-import { THEMES, APP_LOGO_URL, PWA_ICON_URL, SIGNATURE_URL } from './constants';
+import { THEMES, APP_LOGO_URL, SIGNATURE_URL } from './constants';
 import UsernameBadge from './components/UsernameBadge';
 import FaceID from './components/FaceID';
 import AnnouncementCenter from './components/AnnouncementCenter';
 import StoreManager from './components/StoreManager';
-import { InstallFloatingButton } from './components/InstallFloatingButton'; // Updated Import to Named Export
+import { InstallFloatingButton } from './components/InstallFloatingButton'; 
 import { supabase } from './supabase';
 
-// 7.1. 实施路由懒加载 (Route-based Code Splitting)
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Inventory = lazy(() => import('./pages/Inventory'));
 const OperationLogs = lazy(() => import('./pages/OperationLogs'));
@@ -28,7 +27,6 @@ const ImportProducts = lazy(() => import('./pages/ImportProducts'));
 const AuditHall = lazy(() => import('./pages/AuditHall'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 
-// --- Global Context ---
 interface PageActions {
   handleCopy?: () => void;
   handleExcel?: () => void;
@@ -46,14 +44,13 @@ interface AppContextType {
   isSidebarOpen: boolean;
   announcementsOpen: boolean;
   setAnnouncementsOpen: (b: boolean) => void;
-  activePopupAnnouncement: Announcement | null; // For direct navigation
+  activePopupAnnouncement: Announcement | null;
   storeManagerOpen: boolean;
   setStoreManagerOpen: (b: boolean) => void;
   setPageActions: (actions: PageActions) => void;
   handleCopy?: () => void;
   handleExcel?: () => void;
   isMobile: boolean;
-  // GLOBAL STATE
   products: Product[];
   setProducts: React.Dispatch<React.SetStateAction<Product[]>>;
   logs: OperationLog[];
@@ -77,47 +74,29 @@ export const useApp = () => {
   return context;
 };
 
-// ... (LoadingScreen remains identical) ...
 const LoadingScreen = () => (
   <div className="flex items-center justify-center h-full w-full min-h-[50vh]">
     <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
   </div>
 );
 
-// --- 26.1.3 Service Worker Update Toast ---
 const SWUpdateToast = () => {
     const [show, setShow] = useState(false);
-
     useEffect(() => {
         if ('serviceWorker' in navigator) {
-            // Since we use self.skipWaiting() in SW, we listen for controller change
-            navigator.serviceWorker.addEventListener('controllerchange', () => {
-                // New SW has taken control
-                setShow(true);
-            });
+            navigator.serviceWorker.addEventListener('controllerchange', () => setShow(true));
         }
     }, []);
-
-    const handleReload = () => {
-        window.location.reload();
-    };
-
+    const handleReload = () => window.location.reload();
     if (!show) return null;
-
     return (
         <div className="fixed bottom-20 left-1/2 transform -translate-x-1/2 z-[100] animate-bounce-slow w-max">
-            <button 
-                onClick={handleReload}
-                className="bg-blue-600 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-2 font-bold hover:bg-blue-700 transition-colors border-2 border-white/20"
-            >
-                <RefreshCw className="w-5 h-5 animate-spin" />
-                发现新版本，请刷新以更新
+            <button onClick={handleReload} className="bg-blue-600 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-2 font-bold hover:bg-blue-700 transition-colors border-2 border-white/20">
+                <RefreshCw className="w-5 h-5 animate-spin" /> 发现新版本，请刷新以更新
             </button>
         </div>
     );
 };
-
-// Removed old InstallAppFloating component
 
 const Navbar = () => {
   const { toggleSidebar, currentStore, setAnnouncementsOpen, user, announcements, handleCopy, handleExcel } = useApp();
@@ -186,21 +165,8 @@ const Navbar = () => {
   const showCopy = allowedPages.includes(location.pathname);
   const showExcel = allowedPages.includes(location.pathname) && !user?.permissions?.hideExcelExport;
 
-  const handleExcelClick = () => {
-      if (handleExcel) {
-          handleExcel();
-      } else {
-          alert(`请切换到库存、日志或审计页面，才能生效`);
-      }
-  };
-  
-  const handleCopyClick = () => {
-      if (handleCopy) {
-          handleCopy();
-      } else {
-           alert(`请切换到库存、日志或审计页面，才能生效`);
-      }
-  }
+  const handleExcelClick = () => { if (handleExcel) handleExcel(); else alert(`请切换到库存、日志或审计页面，才能生效`); };
+  const handleCopyClick = () => { if (handleCopy) handleCopy(); else alert(`请切换到库存、日志或审计页面，才能生效`); };
 
   const ActionButtons = () => (
     <>
@@ -356,9 +322,7 @@ const Login = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900 px-4">
-      {/* 27.2.1 Ensure install button shows on login too */}
       <InstallFloatingButton />
-      
       {useFaceID && <FaceID onSuccess={handleFaceSuccess} onCancel={() => setUseFaceID(false)} storedFaceData={targetFaceData} mode="verify" />}
       <div className="w-full max-w-md bg-white dark:bg-gray-800 p-8 rounded-3xl shadow-xl">
         <div className="text-center mb-8">
@@ -377,23 +341,39 @@ const Login = () => {
   );
 };
 
-const SplashScreen = ({ onFinish }: { onFinish: () => void }) => {
+// 27. Splash Screen Component (Redesigned per 27.1)
+const SplashScreen = ({ isReady }: { isReady: boolean }) => {
+  const [visible, setVisible] = useState(true);
+
+  // 27.2.4 Fade Out Logic
   useEffect(() => {
-    const timer = setTimeout(() => {
-       const el = document.getElementById('splash-screen');
-       if (el) { el.style.opacity = '0'; el.style.visibility = 'hidden'; }
-       setTimeout(onFinish, 800); 
-    }, 2500);
-    return () => clearTimeout(timer);
-  }, [onFinish]);
+    if (isReady) {
+      // Transition out
+      const el = document.getElementById('splash-screen');
+      if (el) {
+          el.style.opacity = '0';
+          el.style.visibility = 'hidden';
+      }
+      // Unmount after animation
+      const timer = setTimeout(() => setVisible(false), 800);
+      return () => clearTimeout(timer);
+    }
+  }, [isReady]);
+
+  if (!visible) return null;
 
   return (
     <div id="splash-screen">
+      {/* 27.1.1 Center Visuals */}
       <div className="flex flex-col items-center animate-fade-in-up">
          <img src={APP_LOGO_URL} alt="Logo" className="w-24 h-24 rounded-2xl shadow-xl mb-6" />
          <h1 className="text-3xl font-bold text-gray-800 tracking-wider">棱镜</h1>
-         <p className="text-gray-500 mt-2 mb-10">StockWise-智能库管系统</p>
-         <div className="mt-10"><img src={SIGNATURE_URL} alt="Signature" className="h-16 opacity-80" /></div>
+         <p className="text-gray-500 mt-2">StockWise-智能库管系统</p>
+      </div>
+      
+      {/* 27.1.2 Bottom Signature */}
+      <div className="absolute bottom-10 left-0 right-0 flex justify-center">
+         <img src={SIGNATURE_URL} alt="Signature" className="h-16 opacity-80" />
       </div>
     </div>
   );
@@ -444,7 +424,10 @@ const AppContent = () => {
   const [announcementsOpen, setAnnouncementsOpen] = useState(false);
   const [activePopupAnnouncement, setActivePopupAnnouncement] = useState<Announcement | null>(null);
   const [storeManagerOpen, setStoreManagerOpen] = useState(false);
+  
+  // 27.2.1 Initial State: Not Ready
   const [appReady, setAppReady] = useState(false);
+  
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [pageActions, setPageActions] = useState<PageActions>({});
 
@@ -467,12 +450,21 @@ const AppContent = () => {
       }
   }, []);
 
+  // 27.2.2 Parallel Execution Logic
   const reloadData = async () => {
     try {
-        const { data: sData, error } = await supabase.from('stores').select('*');
-        if (error) throw error;
-        if (sData) {
-            const mappedStores = sData.map((s: any) => ({
+        // Parallel Fetching
+        const [sData, uData, pData, lData, aData, lrData] = await Promise.all([
+            supabase.from('stores').select('*'),
+            supabase.from('users').select('*'),
+            supabase.from('products').select('*, batches(*)'),
+            supabase.from('operation_logs').select('*').order('created_at', { ascending: false }),
+            supabase.from('announcements').select('*').order('created_at', { ascending: false }),
+            supabase.from('login_records').select('*').order('login_at', { ascending: false })
+        ]);
+
+        if (sData.data) {
+            const mappedStores = sData.data.map((s: any) => ({
                 id: String(s.id), name: s.name, isParent: s.is_parent, childrenIds: s.children_ids?.map(String),
                 parentId: s.parent_id ? String(s.parent_id) : undefined, managerIds: s.manager_ids?.map(String), viewerIds: s.viewer_ids?.map(String)
             }));
@@ -483,22 +475,14 @@ const AppContent = () => {
                 setCurrentStore(targetStore);
             }
         }
-    } catch (e) { console.error("Stores fetch error", e); }
 
-    try {
-        const { data: uData, error } = await supabase.from('users').select('*');
-        if (error) throw error;
-        if (uData) {
-            const mappedUsers = uData.map((u: any) => ({ ...u, id: String(u.id), storeId: u.store_id ? String(u.store_id) : undefined }));
+        if (uData.data) {
+            const mappedUsers = uData.data.map((u: any) => ({ ...u, id: String(u.id), storeId: u.store_id ? String(u.store_id) : undefined }));
             setUsers(mappedUsers);
         }
-    } catch (e) { console.error("Users fetch error", e); }
 
-    try {
-        const { data: pData, error } = await supabase.from('products').select('*, batches(*)');
-        if (error) throw error;
-        if (pData) {
-            const mappedProducts: Product[] = pData.map((p: any) => {
+        if (pData.data) {
+            const mappedProducts: Product[] = pData.data.map((p: any) => {
                 const safeBatches = (p.batches || []).map((b: any) => ({
                     id: String(b.id), batchNumber: b.batch_number, expiryDate: b.expiry_date,
                     totalQuantity: Number(b.total_quantity) || 0, conversionRate: b.conversion_rate || p.conversion_rate || 10,
@@ -514,25 +498,18 @@ const AppContent = () => {
             });
             setProducts(mappedProducts);
         }
-    } catch (e) { console.error("Products fetch error", e); }
 
-    try {
-        const { data: lData, error } = await supabase.from('operation_logs').select('*').order('created_at', { ascending: false });
-        if (error) throw error;
-        if (lData) setLogs(lData.map((l:any) => ({...l, id: String(l.id), target_id: String(l.target_id)})));
-    } catch (e) { console.error("Logs fetch error", e); }
+        if (lData.data) setLogs(lData.data.map((l:any) => ({...l, id: String(l.id), target_id: String(l.target_id)})));
+        if (aData.data) setAnnouncements(aData.data.map((a: any) => ({ ...a, id: String(a.id), target_userIds: a.target_user_ids?.map(String) })));
+        if (lrData.data) setLoginRecords(lrData.data.map((r:any) => ({...r, id: String(r.id), user_id: String(r.user_id)})));
 
-    try {
-        const { data: aData, error } = await supabase.from('announcements').select('*').order('created_at', { ascending: false });
-        if (error) throw error;
-        if (aData) setAnnouncements(aData.map((a: any) => ({ ...a, id: String(a.id), target_userIds: a.target_user_ids?.map(String) })));
-    } catch (e) { console.error("Announcements fetch error", e); }
-
-    try {
-        const { data: lrData, error } = await supabase.from('login_records').select('*').order('login_at', { ascending: false });
-        if (error) throw error;
-        if (lrData) setLoginRecords(lrData.map((r:any) => ({...r, id: String(r.id), user_id: String(r.user_id)})));
-    } catch (e) { console.error("Login Records fetch error", e); }
+    } catch (e) { 
+        console.error("Critical Data Load Error", e); 
+        // 27.2.3 Even on error, we must set ready to allow usage (with empty data or retry UI)
+    } finally {
+        // 27.2.3 Ready State Logic
+        setAppReady(true);
+    }
   };
 
   useEffect(() => { reloadData(); }, []);
@@ -553,6 +530,7 @@ const AppContent = () => {
     else if (theme === 'prism-dark') { root.classList.add('dark', 'theme-prism-dark'); }
   }, [theme]);
 
+  // Popup logic... (Unchanged)
   useEffect(() => {
     if (user && appReady && announcements.length > 0) {
         const today = new Date().toDateString();
@@ -603,7 +581,9 @@ const AppContent = () => {
     <AppContext.Provider value={{ 
       theme, setTheme, user, login, logout, currentStore, setCurrentStore, isSidebarOpen, toggleSidebar, announcementsOpen, setAnnouncementsOpen, activePopupAnnouncement, storeManagerOpen, setStoreManagerOpen, setPageActions, handleCopy: pageActions.handleCopy, handleExcel: pageActions.handleExcel, isMobile, products, setProducts, logs, setLogs, users, setUsers, loginRecords, setLoginRecords, stores, setStores, announcements, setAnnouncements, reloadData
     }}>
-      {!appReady && <SplashScreen onFinish={() => setAppReady(true)} />}
+      {/* 27. Splash Screen with Logic */}
+      <SplashScreen isReady={appReady} />
+      {/* App content is rendered but hidden/under splash until ready, or effectively mounted */}
       {appReady && <Router><MainLayout /></Router>}
     </AppContext.Provider>
   );

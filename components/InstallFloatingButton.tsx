@@ -1,190 +1,186 @@
 
 import React, { useEffect, useState } from 'react';
-import { Download, X, Share, MoreVertical, ArrowUp, Smartphone, Monitor, Check } from 'lucide-react';
+import { X, Share, ArrowUp, MoreVertical, Check } from 'lucide-react';
+import { APP_LOGO_URL } from '../constants';
+
+type InstallEnv = 'hidden' | 'wechat' | 'native' | 'ios' | 'android-manual';
 
 export const InstallFloatingButton: React.FC = () => {
+  const [installEnv, setInstallEnv] = useState<InstallEnv>('hidden');
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [isIOS, setIsIOS] = useState(false);
-  const [isStandalone, setIsStandalone] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
-  const [isInstalled, setIsInstalled] = useState(false);
+  const [isInstalledSuccess, setIsInstalledSuccess] = useState(false);
 
   useEffect(() => {
-    // 1. 检测设备类型
-    const userAgent = window.navigator.userAgent.toLowerCase();
-    const isIosDevice = /iphone|ipad|ipod/.test(userAgent);
-    setIsIOS(isIosDevice);
-
-    // 2. 检测是否已安装 (Standalone 模式)
-    const checkStandalone = () => {
-        const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || 
-                               (window.navigator as any).standalone || 
-                               document.referrer.includes('android-app://');
-        setIsStandalone(isStandaloneMode);
-    };
-    checkStandalone();
-    window.matchMedia('(display-mode: standalone)').addEventListener('change', checkStandalone);
-
-    // 3. 监听自动安装事件 (Android/Desktop)
-    if (window.deferredPrompt) {
-        setDeferredPrompt(window.deferredPrompt);
+    // 28.2.1 场景 A: 已安装/App 模式 (The Guard Clause)
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
+                         (window.navigator as any).standalone || 
+                         window.location.search.includes('source=pwa');
+    
+    if (isStandalone) {
+        setInstallEnv('hidden');
+        return;
     }
 
+    const ua = navigator.userAgent;
+
+    // 28.2.2 场景 B: 微信/钉钉/企业微信
+    if (/MicroMessenger|DingTalk/i.test(ua)) {
+        setInstallEnv('wechat');
+        return;
+    }
+
+    // 28.2.4 场景 D: iOS & iPadOS
+    const isIOS = /iphone|ipad|ipod/i.test(ua) || (ua.includes('Macintosh') && navigator.maxTouchPoints > 1);
+    if (isIOS) {
+        setInstallEnv('ios');
+        return;
+    }
+
+    // 28.2.3 场景 C: 支持自动安装的环境 (监听事件)
     const handleBeforeInstallPrompt = (e: any) => {
-      e.preventDefault(); // 阻止默认横幅
-      setDeferredPrompt(e);
-      window.deferredPrompt = e;
-      console.log("[PWA] Capture Event Success");
+        e.preventDefault();
+        setDeferredPrompt(e);
+        // 如果之前被判为 android-manual 或 hidden，这里升级为 native
+        setInstallEnv('native');
+        console.log("Captured beforeinstallprompt event");
     };
-
-    const handleAppInstalled = () => {
-        setDeferredPrompt(null);
-        window.deferredPrompt = null;
-        setIsInstalled(true);
-        setShowGuide(false);
-        setTimeout(() => setIsInstalled(false), 3000); // Hide success msg after 3s
-    };
-
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    // 28.2.5 场景 E: 非标准安卓/移动端 (Fallback)
+    // 28.2.6 场景 F: PC 桌面端 (Hidden by default unless native event fires)
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua) || window.innerWidth < 768;
+    
+    // 初始化判定 (会被 beforeinstallprompt 覆盖)
+    if (isMobile) {
+        setInstallEnv((prev) => prev === 'native' ? 'native' : 'android-manual');
+    } else {
+        setInstallEnv((prev) => prev === 'native' ? 'native' : 'hidden');
+    }
+
+    // 28.3 安装成功后的清理
+    const handleAppInstalled = () => {
+        setInstallEnv('hidden');
+        setIsInstalledSuccess(true);
+        setShowGuide(false);
+        setTimeout(() => setIsInstalledSuccess(false), 3000);
+    };
     window.addEventListener('appinstalled', handleAppInstalled);
 
     return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      window.removeEventListener('appinstalled', handleAppInstalled);
+        window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+        window.removeEventListener('appinstalled', handleAppInstalled);
     };
   }, []);
 
-  if (isStandalone) return null;
-
-  const handleInstallClick = async () => {
-    if (deferredPrompt) {
-      // 浏览器支持自动安装
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === 'accepted') {
-        setDeferredPrompt(null);
-        window.deferredPrompt = null;
+  const handleClick = () => {
+      if (installEnv === 'native' && deferredPrompt) {
+          deferredPrompt.prompt();
+          deferredPrompt.userChoice.then((choiceResult: any) => {
+              if (choiceResult.outcome === 'accepted') {
+                  setDeferredPrompt(null);
+              }
+          });
+      } else {
+          setShowGuide(true);
       }
-    } else {
-      // 不支持自动安装 (iOS 或 桌面端拦截/不支持)，显示指引
-      setShowGuide(true);
-    }
   };
+
+  if (installEnv === 'hidden' && !isInstalledSuccess) return null;
 
   return (
     <>
-      {/* 悬浮安装按钮 */}
-      {!isInstalled && (
-          <button
-            onClick={handleInstallClick}
-            className="fixed bottom-24 right-4 z-50 flex items-center gap-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white px-4 py-3 rounded-full shadow-lg hover:scale-105 transition-transform font-bold active:scale-95 border-2 border-white/20"
-            style={{ boxShadow: '0 4px 20px rgba(37, 99, 235, 0.4)' }}
-          >
-            <Download size={20} />
-            <span>安装应用</span>
-          </button>
-      )}
+        {/* 28.1 UI 组件外观与层级 */}
+        {/* 父容器: fixed, z-40, pointer-events-none (不遮挡) */}
+        <div className="fixed top-4 right-4 z-40 pointer-events-none flex flex-col items-end gap-2">
+            
+            {/* 安装成功提示 */}
+            {isInstalledSuccess && (
+                <div className="bg-green-500 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 animate-bounce pointer-events-auto">
+                    <Check size={16} /> 安装成功
+                </div>
+            )}
 
-      {/* 安装成功提示 */}
-      {isInstalled && (
-          <div className="fixed bottom-24 right-4 z-50 bg-green-500 text-white px-6 py-3 rounded-full shadow-xl flex items-center gap-2 animate-bounce">
-              <Check size={20} />
-              <span>安装成功！</span>
-          </div>
-      )}
-
-      {/* 美化版安装指引弹窗 */}
-      {showGuide && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-300">
-          
-          {/* 指向右上角的箭头 (Android/PC) */}
-          {!isIOS && (
-            <div className="absolute top-2 right-4 text-white animate-bounce flex flex-col items-end z-[101]">
-                <ArrowUp className="w-12 h-12 rotate-45 mb-2 text-yellow-400 drop-shadow-lg" strokeWidth={3} />
-                <span className="text-lg font-bold bg-white/20 px-4 py-2 rounded-xl backdrop-blur-md border border-white/30">
-                    第一步：点击这里
-                </span>
-            </div>
-          )}
-
-          {/* 指向底部的箭头 (iOS Safari) */}
-          {isIOS && (
-            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 text-white animate-bounce flex flex-col items-center z-[101]">
-                <span className="text-lg font-bold bg-white/20 px-4 py-2 rounded-xl backdrop-blur-md border border-white/30 mb-2">
-                    第一步：点击底部按钮
-                </span>
-                <ArrowUp className="w-12 h-12 rotate-180 text-yellow-400 drop-shadow-lg" strokeWidth={3} />
-            </div>
-          )}
-
-          <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl relative transform transition-all scale-100 border border-gray-200 dark:border-gray-700">
-            {/* Header */}
-            <div className="bg-gradient-to-br from-blue-600 to-purple-700 p-6 text-white text-center relative">
+            {/* 按钮本体: pointer-events: auto */}
+            {!isInstalledSuccess && installEnv !== 'hidden' && (
                 <button 
-                  onClick={() => setShowGuide(false)}
-                  className="absolute top-4 right-4 text-white/80 hover:text-white p-1 bg-black/20 rounded-full transition-colors"
+                    onClick={handleClick}
+                    className="pointer-events-auto bg-white dark:bg-gray-800 p-1 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 hover:scale-105 transition-transform w-12 h-12 md:w-14 md:h-14 flex items-center justify-center overflow-hidden"
+                    title="安装应用"
                 >
-                  <X size={20} />
+                    <img src={APP_LOGO_URL} alt="Install" className="w-full h-full object-cover rounded-xl" />
                 </button>
-                <div className="w-20 h-20 bg-white rounded-2xl mx-auto shadow-lg flex items-center justify-center mb-4 border-4 border-white/20">
-                    <img src="/icons/icon-192.png" alt="Logo" className="w-16 h-16 rounded-xl object-contain" />
-                </div>
-                <h3 className="text-xl font-bold tracking-wide">安装“棱镜库存”</h3>
-                <p className="text-sm text-white/90 mt-1 font-medium">添加到主屏幕，体验原生 APP 速度</p>
-            </div>
-
-            {/* Content Steps */}
-            <div className="p-6 space-y-6">
-                <div className="space-y-4">
-                    {/* Step 1 */}
-                    <div className="flex items-start gap-4">
-                        <div className="flex-shrink-0 w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold shadow-sm">1</div>
-                        <div>
-                            <p className="font-bold text-gray-800 dark:text-white">打开浏览器菜单</p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-1">
-                                {isIOS ? (
-                                    <>点击底部中间的 <Share className="w-3 h-3 inline"/> 分享按钮</>
-                                ) : (
-                                    <>点击右上角的 <MoreVertical className="w-3 h-3 inline"/> 菜单按钮</>
-                                )}
-                            </p>
-                        </div>
-                    </div>
-                    
-                    {/* Step 2 */}
-                    <div className="flex items-start gap-4">
-                        <div className="flex-shrink-0 w-8 h-8 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center font-bold shadow-sm">2</div>
-                        <div>
-                            <p className="font-bold text-gray-800 dark:text-white">添加到主屏幕</p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                {isIOS ? (
-                                    <>向下滑动，找到并选择“添加到主屏幕”</>
-                                ) : (
-                                    <>选择“安装应用”或“添加到主屏幕”</>
-                                )}
-                            </p>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Footer Note */}
-                <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 flex items-center gap-3 border border-gray-100 dark:border-gray-600">
-                    {isIOS ? <Smartphone className="w-6 h-6 text-gray-400" /> : <Monitor className="w-6 h-6 text-gray-400" />}
-                    <div className="text-xs text-gray-500 dark:text-gray-400 leading-tight">
-                        安装后，您将获得全屏沉浸式体验，启动速度更快，且支持离线访问。
-                    </div>
-                </div>
-
-                <button
-                  onClick={() => setShowGuide(false)}
-                  className="w-full py-3.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-xl font-bold hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                >
-                  我知道了
-                </button>
-            </div>
-          </div>
+            )}
         </div>
-      )}
+
+        {/* 28.2 引导交互逻辑 (Modals) */}
+        {showGuide && (
+            <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in" onClick={() => setShowGuide(false)}>
+                
+                {/* 28.2.2 场景 B: 微信/钉钉遮罩 */}
+                {installEnv === 'wechat' && (
+                    <div className="absolute top-4 right-4 text-white flex flex-col items-end animate-bounce">
+                        <ArrowUp className="w-12 h-12 rotate-45 mb-2 text-yellow-400" />
+                        <div className="bg-white/20 backdrop-blur px-4 py-2 rounded-xl border border-white/30 text-sm font-bold">
+                            请点击右上角 •••<br/>选择“在浏览器打开”
+                        </div>
+                    </div>
+                )}
+
+                {/* 28.2.4 场景 D: iOS 引导 */}
+                {installEnv === 'ios' && (
+                    <div className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-3xl p-6 relative shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <button onClick={() => setShowGuide(false)} className="absolute top-4 right-4 text-gray-400 p-1 bg-gray-100 rounded-full"><X size={16}/></button>
+                        <div className="flex flex-col items-center text-center">
+                            <img src={APP_LOGO_URL} className="w-16 h-16 rounded-2xl shadow-md mb-4" />
+                            <h3 className="text-lg font-bold mb-2 dark:text-white">安装“棱镜”到主屏幕</h3>
+                            <p className="text-xs text-gray-500 mb-4">获得全屏沉浸式体验，启动速度更快</p>
+                            <div className="space-y-4 text-sm text-gray-600 dark:text-gray-300 mt-2 bg-gray-50 dark:bg-gray-700/50 p-4 rounded-xl text-left">
+                                <div className="flex items-center gap-3">
+                                    <span className="min-w-[24px] h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold text-xs">1</span>
+                                    <span>点击底部中间的 <Share className="inline w-4 h-4 text-blue-500"/> 分享按钮</span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <span className="min-w-[24px] h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold text-xs">2</span>
+                                    <span>向下滑动选择“添加到主屏幕”</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="absolute -bottom-16 left-1/2 -translate-x-1/2 flex flex-col items-center animate-bounce text-white pointer-events-none">
+                            <span className="text-sm font-bold mb-1 shadow-black drop-shadow-md">第一步：点击这里</span>
+                            <ArrowUp className="w-8 h-8 rotate-180 drop-shadow-md" />
+                        </div>
+                    </div>
+                )}
+
+                {/* 28.2.5 场景 E: 通用安卓/其他 引导 */}
+                {installEnv === 'android-manual' && (
+                    <div className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-3xl p-6 relative shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <button onClick={() => setShowGuide(false)} className="absolute top-4 right-4 text-gray-400 p-1 bg-gray-100 rounded-full"><X size={16}/></button>
+                        <div className="flex flex-col items-center text-center">
+                            <img src={APP_LOGO_URL} className="w-16 h-16 rounded-2xl shadow-md mb-4" />
+                            <h3 className="text-lg font-bold mb-2 dark:text-white">安装应用</h3>
+                            <p className="text-xs text-gray-500 mb-4">请手动添加应用到桌面</p>
+                            <div className="space-y-4 text-sm text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-700/50 p-4 rounded-xl text-left">
+                                <div className="flex items-center gap-3">
+                                    <span className="min-w-[24px] h-6 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center font-bold text-xs">1</span>
+                                    <span>点击浏览器菜单 <MoreVertical className="inline w-4 h-4"/></span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <span className="min-w-[24px] h-6 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center font-bold text-xs">2</span>
+                                    <span>选择“安装应用”或“添加到主屏幕”</span>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowGuide(false)} className="mt-6 w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors">我知道了</button>
+                        </div>
+                        <div className="absolute -top-16 right-0 flex flex-col items-end animate-bounce text-white pointer-events-none">
+                            <ArrowUp className="w-8 h-8 rotate-45 mb-1 drop-shadow-md" />
+                            <span className="text-sm font-bold shadow-black drop-shadow-md">点击菜单</span>
+                        </div>
+                    </div>
+                )}
+            </div>
+        )}
     </>
   );
 };

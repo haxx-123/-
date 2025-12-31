@@ -22,7 +22,7 @@ export const formatDate = (dateStr: string) => {
   return new Date(dateStr).toLocaleString('zh-CN', { hour12: false });
 };
 
-// Image Constants
-export const APP_LOGO_URL = "https://i.ibb.co/vxq7QfYd/retouch-2025121423241826.png";
-export const PWA_ICON_URL = "https://i.ibb.co/TBxHgV10/IMG-20251214-191059.png";
-export const SIGNATURE_URL = "https://i.ibb.co/8gLfYKCW/retouch-2025121313394035.png";
+// Image Constants (Localized per Section 26.1 & 26.4)
+export const APP_LOGO_URL = "/logo.png";
+export const PWA_ICON_URL = "/icons/icon-192.png";
+export const SIGNATURE_URL = "/Signature.png";
