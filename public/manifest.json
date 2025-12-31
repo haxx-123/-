@@ -8,6 +8,7 @@
   "theme_color": "#ffffff",
   "orientation": "portrait",
   "scope": "/",
+  "description": "StockWise 智能库管系统",
   "icons": [
     {
       "src": "/icons/icon-192.png",
@@ -32,6 +33,22 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "https://i.ibb.co/vxq7QfYd/retouch-2025121423241826.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Desktop View"
+    },
+    {
+      "src": "https://i.ibb.co/vxq7QfYd/retouch-2025121423241826.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Mobile View"
     }
   ]
 }
