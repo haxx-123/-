@@ -3,16 +3,14 @@ import React, { useState, useEffect, createContext, useContext, Suspense, lazy, 
 import { HashRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { 
   Menu, X, LayoutDashboard, Package, Import, History, 
-  ShieldCheck, Settings, Bell, Download, Copy, Crop, 
-  LogOut, RefreshCw, UserCircle, Share, MoreHorizontal, FileSpreadsheet,
-  MoreVertical, Laptop, Smartphone, ExternalLink, ArrowUp, AlertCircle
+  ShieldCheck, Settings, Bell, Copy, Crop, 
+  LogOut, RefreshCw, UserCircle, MoreHorizontal, FileSpreadsheet
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import html2canvas from 'html2canvas';
-import * as XLSX from 'xlsx';
 
 import { ThemeMode, RoleLevel, User, Store, Product, OperationLog, LoginRecord, Announcement } from './types';
-import { THEMES, APP_LOGO_URL, SIGNATURE_URL } from './constants';
+import { APP_LOGO_URL, SIGNATURE_URL } from './constants';
 import UsernameBadge from './components/UsernameBadge';
 import FaceID from './components/FaceID';
 import AnnouncementCenter from './components/AnnouncementCenter';
@@ -116,22 +114,14 @@ const Navbar = () => {
 
   const handleScreenshot = async () => {
     const mainContent = document.getElementById('main-content');
-    const sidebar = document.getElementById('app-sidebar');
-    const navbar = document.getElementById('app-navbar');
-    
     if (mainContent) {
-      const originalScrollTop = mainContent.scrollTop;
-      mainContent.scrollTop = mainContent.scrollHeight;
-      await new Promise(resolve => setTimeout(resolve, 300));
-      mainContent.scrollTop = originalScrollTop;
-
       const originalHeight = mainContent.style.height;
       const originalOverflow = mainContent.style.overflow;
       mainContent.style.height = `${mainContent.scrollHeight}px`;
       mainContent.style.overflow = 'visible';
       
-      if (sidebar) sidebar.style.display = 'none';
-      if (navbar) navbar.style.display = 'none';
+      const hiddenElements = document.querySelectorAll('#app-sidebar, #app-navbar, .fixed-ui');
+      hiddenElements.forEach((el: any) => el.style.display = 'none');
 
       try {
           const canvas = await html2canvas(document.body, { 
@@ -140,10 +130,7 @@ const Navbar = () => {
               height: mainContent.scrollHeight,
               windowHeight: mainContent.scrollHeight,
               y: 0,
-              ignoreElements: (el) => {
-                  const id = el.id;
-                  return id === 'app-sidebar' || id === 'app-navbar' || el.classList.contains('fixed-ui');
-              }
+              ignoreElements: (el) => el.classList.contains('fixed-ui')
           });
           const link = document.createElement('a');
           link.download = `prism-screenshot-${Date.now()}.png`;
@@ -155,8 +142,7 @@ const Navbar = () => {
       } finally {
           mainContent.style.height = originalHeight;
           mainContent.style.overflow = originalOverflow;
-          if (sidebar) sidebar.style.display = '';
-          if (navbar) navbar.style.display = '';
+          hiddenElements.forEach((el: any) => el.style.display = '');
       }
     }
   };
@@ -190,6 +176,7 @@ const Navbar = () => {
         <button onClick={toggleSidebar} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"><Menu className="w-6 h-6 dark:text-white" /></button>
       </div>
       <div className="hidden lg:flex items-center text-lg font-semibold dark:text-white">
+        {/* 26.4.2 App Internal Logo */}
         <img src={APP_LOGO_URL} alt="Logo" className="w-6 h-6 mr-3 rounded-md" />
         棱镜-StockWise <span className="mx-2 text-gray-400">/</span> {currentStore.name}
       </div>
@@ -226,6 +213,7 @@ const Sidebar = () => {
       {isSidebarOpen && <div className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden" onClick={toggleSidebar}></div>}
       <div id="app-sidebar" className={sidebarClass}>
         <div className="h-16 flex items-center px-6 border-b dark:border-gray-700">
+           {/* 26.4.2 App Internal Logo */}
            <img src={APP_LOGO_URL} alt="Prism" className="w-8 h-8 rounded-lg mr-3 shadow-md" />
            <span className="text-xl font-bold dark:text-white">棱镜 StockWise</span>
            <button onClick={toggleSidebar} className="ml-auto lg:hidden"><X className="w-5 h-5" /></button>
@@ -322,10 +310,12 @@ const Login = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900 px-4">
+      {/* 28. Floating Install Button visible on Login too */}
       <InstallFloatingButton />
       {useFaceID && <FaceID onSuccess={handleFaceSuccess} onCancel={() => setUseFaceID(false)} storedFaceData={targetFaceData} mode="verify" />}
       <div className="w-full max-w-md bg-white dark:bg-gray-800 p-8 rounded-3xl shadow-xl">
         <div className="text-center mb-8">
+           {/* 26.4.2 App Internal Logo */}
            <img src={APP_LOGO_URL} alt="Logo" className="w-20 h-20 mx-auto mb-4 rounded-2xl shadow-lg" />
            <h1 className="text-2xl font-bold text-gray-800 dark:text-white">棱镜 StockWise</h1>
            <p className="text-gray-500 mt-2">智能库管系统</p>
@@ -354,7 +344,7 @@ const SplashScreen = ({ isReady }: { isReady: boolean }) => {
           el.style.opacity = '0';
           el.style.visibility = 'hidden';
       }
-      // Unmount after animation
+      // Unmount after animation duration (0.8s set in CSS)
       const timer = setTimeout(() => setVisible(false), 800);
       return () => clearTimeout(timer);
     }
@@ -364,15 +354,16 @@ const SplashScreen = ({ isReady }: { isReady: boolean }) => {
 
   return (
     <div id="splash-screen">
-      {/* 27.1.1 Center Visuals */}
+      {/* 27.1.1 Core Visuals (Center) */}
       <div className="flex flex-col items-center animate-fade-in-up">
+         {/* 26.4.1 Localized Logo */}
          <img src={APP_LOGO_URL} alt="Logo" className="w-24 h-24 rounded-2xl shadow-xl mb-6" />
          <h1 className="text-3xl font-bold text-gray-800 tracking-wider">棱镜</h1>
          <p className="text-gray-500 mt-2">StockWise-智能库管系统</p>
       </div>
       
-      {/* 27.1.2 Bottom Signature */}
-      <div className="absolute bottom-10 left-0 right-0 flex justify-center">
+      {/* 27.1.2 Brand Signature (Bottom) */}
+      <div className="absolute bottom-12 left-0 right-0 flex justify-center">
          <img src={SIGNATURE_URL} alt="Signature" className="h-16 opacity-80" />
       </div>
     </div>
@@ -505,9 +496,8 @@ const AppContent = () => {
 
     } catch (e) { 
         console.error("Critical Data Load Error", e); 
-        // 27.2.3 Even on error, we must set ready to allow usage (with empty data or retry UI)
     } finally {
-        // 27.2.3 Ready State Logic
+        // 27.2.3 Ready State Logic (Only now we are ready to remove splash)
         setAppReady(true);
     }
   };
@@ -530,7 +520,7 @@ const AppContent = () => {
     else if (theme === 'prism-dark') { root.classList.add('dark', 'theme-prism-dark'); }
   }, [theme]);
 
-  // Popup logic... (Unchanged)
+  // Popup logic...
   useEffect(() => {
     if (user && appReady && announcements.length > 0) {
         const today = new Date().toDateString();
@@ -583,8 +573,11 @@ const AppContent = () => {
     }}>
       {/* 27. Splash Screen with Logic */}
       <SplashScreen isReady={appReady} />
-      {/* App content is rendered but hidden/under splash until ready, or effectively mounted */}
-      {appReady && <Router><MainLayout /></Router>}
+      
+      {/* App content is rendered but hidden/under splash until ready */}
+      <div style={{ opacity: appReady ? 1 : 0 }} className="transition-opacity duration-500">
+          <Router><MainLayout /></Router>
+      </div>
     </AppContext.Provider>
   );
 };

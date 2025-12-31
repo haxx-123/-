@@ -1,10 +1,10 @@
-
 <!DOCTYPE html>
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover" />
-    <!-- 26.2 Theme Color matching Manifest -->
+    
+    <!-- 26.2/27.1.3 Theme Color -->
     <meta name="theme-color" content="#F2F3F7" />
     
     <!-- Android Full Screen Support -->
@@ -31,16 +31,18 @@
     <!-- PWA Install Event Capture -->
     <script>
       window.deferredPrompt = null;
-      
       window.addEventListener('beforeinstallprompt', function(e) {
+        // 28.2.3 Prevent default mini-infobar
         e.preventDefault();
         window.deferredPrompt = e;
-        console.log('[HTML] PWA Event Captured (beforeinstallprompt)');
+        console.log('[PWA] Captured beforeinstallprompt');
+        // Dispatch custom event to notify React component
+        window.dispatchEvent(new Event('pwa-ready'));
       });
 
       window.addEventListener('appinstalled', () => {
         window.deferredPrompt = null;
-        console.log('[HTML] PWA Installed');
+        console.log('[PWA] App Installed');
       });
     </script>
 
@@ -49,11 +51,29 @@
         darkMode: 'class',
         theme: {
           extend: {
-            colors: {
-              // Extending config to use CSS variables implies reliance on the CSS definitions below
-            },
+            colors: {},
             fontFamily: {
               sans: ['Inter', 'sans-serif'],
+            },
+            animation: {
+              'fade-in': 'fadeIn 0.3s ease-out',
+              'fade-in-up': 'fadeInUp 0.5s ease-out',
+              'slide-down': 'slideDown 0.3s ease-out',
+              'bounce-slow': 'bounce 3s infinite',
+            },
+            keyframes: {
+              fadeIn: {
+                '0%': { opacity: '0' },
+                '100%': { opacity: '1' },
+              },
+              fadeInUp: {
+                '0%': { opacity: '0', transform: 'translateY(10px)' },
+                '100%': { opacity: '1', transform: 'translateY(0)' },
+              },
+              slideDown: {
+                '0%': { opacity: '0', transform: 'translateY(-10px)' },
+                '100%': { opacity: '1', transform: 'translateY(0)' },
+              }
             }
           }
         }
@@ -61,19 +81,16 @@
     </script>
     <style>
       /* 35.2 CSS Variables Mapping */
-      
-      /* Default (Classic Light) 35.2.4 */
       :root {
         --bg-primary: #FFFFFF;
         --bg-paper: #F5F5F5;
         --text-primary: #000000;
-        --text-secondary: #504945; /* Inferred from Prism logic as default secondary, or #666 */
+        --text-secondary: #504945;
         --input-bg: #FAFAFA;
         --border-color: #CCCCCC;
-        --accent-color: #076678; /* Default accent */
+        --accent-color: #076678;
       }
 
-      /* OLED Black (Pure Black) 35.2.3 */
       html.dark:not(.theme-prism-dark) {
         --bg-primary: #000000;
         --bg-paper: #121212;
@@ -84,7 +101,6 @@
         --accent-color: #D65D0E;
       }
 
-      /* Prism Light 35.2.1 */
       html.theme-prism-light {
         --bg-primary: #F2F3F7;
         --bg-paper: #FFFFFF;
@@ -95,7 +111,6 @@
         --accent-color: #076678;
       }
 
-      /* Prism Deep Dark 35.2.2 */
       html.theme-prism-dark {
         --bg-primary: #1D2021;
         --bg-paper: #282828;
@@ -106,11 +121,12 @@
         --accent-color: #D65D0E;
       }
 
-      /* Base Transition */
       body {
         transition: background-color 0.3s ease, color 0.3s ease;
         background-color: var(--bg-primary);
         color: var(--text-primary);
+        /* Prevent elastic scrolling on iOS for PWA feel */
+        overscroll-behavior-y: none; 
       }
 
       /* 35.3 Global Component Overrides */
@@ -125,12 +141,10 @@
         opacity: 0.7;
       }
 
-      /* Force overrides for Tailwind utility classes to respect variables where necessary for themes */
       .bg-white { background-color: var(--bg-paper) !important; }
       .dark .bg-gray-800 { background-color: var(--bg-paper) !important; }
       .dark .bg-gray-900 { background-color: var(--bg-primary) !important; }
       
-      /* Glassmorphism updates based on variables */
       .glass {
         background: var(--bg-paper);
         backdrop-filter: blur(10px);
@@ -140,7 +154,6 @@
         opacity: 0.95;
       }
 
-      /* Custom Scrollbar */
       ::-webkit-scrollbar {
         width: 6px;
         height: 6px;
@@ -156,8 +169,7 @@
         background: var(--text-secondary);
       }
 
-      /* 36.3.1 Role Gradients */
-      /* Level 00: Bright Purple -> Deep Pink -> Cyan */
+      /* Role Gradients */
       .role-gradient-00 {
         background: linear-gradient(45deg, #d946ef, #ec4899, #06b6d4);
         -webkit-background-clip: text;
@@ -166,7 +178,6 @@
         font-weight: bold;
         text-shadow: 0 0 10px rgba(139, 92, 246, 0.3);
       }
-      /* Level 01: Pure Gold -> Orange -> Bright Yellow */
       .role-gradient-01 {
         background: linear-gradient(45deg, #FFD700, #FFA500, #FFFFE0);
         -webkit-background-clip: text;
@@ -175,13 +186,11 @@
         font-weight: bold;
         text-shadow: 0 0 5px rgba(255, 215, 0, 0.5);
       }
-      
-      /* Level 06-09 Text Color Force */
       .role-text-common {
         color: var(--text-primary) !important;
       }
 
-      /* 27.2.1 Splash Screen Styling */
+      /* 27. Splash Screen Styling */
       #splash-screen {
         position: fixed;
         inset: 0;
@@ -190,16 +199,13 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        transition: opacity 0.8s ease-out, visibility 0.8s;
         /* 27.1.3 Background Color */
         background-color: #F2F3F7; 
-        color: #3C3836;
+        transition: opacity 0.8s ease-out, visibility 0.8s;
       }
       
-      /* Utilities */
       .pointer-events-none { pointer-events: none; }
       .pointer-events-auto { pointer-events: auto; }
-      .z-30 { z-index: 30; }
     </style>
   <script type="importmap">
 {
