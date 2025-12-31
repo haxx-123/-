@@ -116,100 +116,150 @@ const SWUpdateToast = () => {
     );
 };
 
-// --- 27. InstallAppFloating (Enhanced Robust Fix) ---
+// --- 27. InstallAppFloating (Enhanced & Robust) ---
 const InstallAppFloating = () => {
-  // 状态：是否捕获到了原生的安装事件 (对象)
   const [nativePromptEvent, setNativePromptEvent] = useState<any>(null);
+  const [visible, setVisible] = useState(false);
   
-  // 环境检测状态
-  const [isIOS, setIsIOS] = useState(false);
-  const [isInApp, setIsInApp] = useState(false);
-  const [isMobileEnv, setIsMobileEnv] = useState(false);
-  
-  // 模态框显示状态
+  // Modals
   const [showIOSModal, setShowIOSModal] = useState(false);
   const [showGenericModal, setShowGenericModal] = useState(false);
   const [showInAppOverlay, setShowInAppOverlay] = useState(false);
-  const [showDesktopModal, setShowDesktopModal] = useState(false); // 新增：桌面端引导
+
+  // Environment Flags
+  const [isIOS, setIsIOS] = useState(false);
+  const [isInApp, setIsInApp] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
 
   useEffect(() => {
-    // 1. 初始化环境检测
+    // 1. Environment Detection
     const ua = navigator.userAgent;
     const _isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const _isInApp = /MicroMessenger|DingTalk/i.test(ua);
     const _isMobile = /Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua) || _isIOS;
     
+    // 27.2.1 Guard Clause (Standalone Check)
+    const _isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
+                          (window.navigator as any).standalone === true ||
+                          window.location.search.includes('source=pwa');
+
     setIsIOS(_isIOS);
     setIsInApp(_isInApp);
-    setIsMobileEnv(_isMobile);
+    setIsMobile(_isMobile);
+    setIsStandalone(_isStandalone);
 
-    // 2. 直接监听 beforeinstallprompt (双重保险)
-    const handleBeforeInstallPrompt = (e: any) => {
+    // 2. Event Listeners
+    const handleNative = (e: any) => {
         e.preventDefault();
-        window.deferredPrompt = e;
+        console.log('[React] Captured beforeinstallprompt event');
         setNativePromptEvent(e);
-        console.log('[React] PWA Prompt Captured directly in component');
     };
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
 
-    // 3. 检查全局变量 (防止 React 挂载晚于事件触发)
-    if (window.deferredPrompt) {
-        setNativePromptEvent(window.deferredPrompt);
-    }
+    const handleAppInstalled = () => {
+        console.log('[React] App Installed');
+        setNativePromptEvent(null);
+        setVisible(false);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleNative);
+    window.addEventListener('appinstalled', handleAppInstalled);
+    window.addEventListener('pwa-install-ready', () => {
+         if ((window as any).deferredPrompt) {
+             setNativePromptEvent((window as any).deferredPrompt);
+         }
+    });
+
+    // 3. Aggressive Polling for deferredPrompt (Crucial for race conditions)
+    // Sometimes the event fires before React hydrates.
+    const pollInterval = setInterval(() => {
+        if ((window as any).deferredPrompt && !nativePromptEvent) {
+            console.log('[React] Polled deferredPrompt');
+            setNativePromptEvent((window as any).deferredPrompt);
+        }
+    }, 1000);
 
     return () => {
-        window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+        window.removeEventListener('beforeinstallprompt', handleNative);
+        window.removeEventListener('appinstalled', handleAppInstalled);
+        clearInterval(pollInterval);
     };
-  }, []);
+  }, [nativePromptEvent]);
 
-  // 4. 已安装/Standalone 模式检测 (隐藏按钮)
-  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
-                       (window.navigator as any).standalone === true ||
-                       window.location.search.includes('source=pwa');
+  // Visibility Logic (Section 27.2)
+  useEffect(() => {
+      if (isStandalone) {
+          setVisible(false);
+          return;
+      }
 
-  if (isStandalone) return null;
+      // Scenario A: Guard Clause handled above.
+
+      // Scenario C: Auto Install Supported (Event Captured)
+      // Works on Mobile Android Chrome & PC Desktop Chrome/Edge
+      if (nativePromptEvent) {
+          setVisible(true);
+          return;
+      }
+
+      // Scenario B (InApp), D (iOS), E (Mobile Non-Standard)
+      // Even if no event, we show icon on mobile to provide guides.
+      if (isMobile || isInApp || isIOS) {
+          setVisible(true);
+          return;
+      }
+
+      // Scenario F: PC Desktop - Non-Chrome/Edge (No event)
+      // "Hide icon"
+      setVisible(false);
+
+  }, [isStandalone, nativePromptEvent, isMobile, isInApp, isIOS]);
 
   const handleClick = async () => {
-      // 关键修复：点击时再次尝试读取全局变量，防止 state 未同步
-      const promptEvent = nativePromptEvent || window.deferredPrompt;
-
-      // 优先处理原生安装
-      if (promptEvent) {
+      // Priority 1: Native Prompt (Scenario C)
+      if (nativePromptEvent) {
           try {
-              await promptEvent.prompt();
-              const { outcome } = await promptEvent.userChoice;
+              await nativePromptEvent.prompt();
+              const { outcome } = await nativePromptEvent.userChoice;
               console.log(`Install outcome: ${outcome}`);
               if (outcome === 'accepted') {
                   setNativePromptEvent(null);
-                  window.deferredPrompt = null;
+                  (window as any).deferredPrompt = null;
+                  setVisible(false);
               }
           } catch (e) {
               console.error("Install failed", e);
-              // 如果 prompt 失败（比如失效），显示通用引导
+              // Fallback if prompt fails
               setShowGenericModal(true);
           }
           return;
       }
 
-      // 环境降级处理 - 如果没有事件
+      // Priority 2: In-App Browser (Scenario B)
       if (isInApp) {
           setShowInAppOverlay(true);
-      } else if (isIOS) {
-          setShowIOSModal(true);
-      } else if (isMobileEnv) {
-          // Android/其他移动端 兜底
-          setShowGenericModal(true);
-      } else {
-          // 桌面端 兜底 (修复：电脑端不显示图标的问题，现在点击会弹出引导)
-          setShowDesktopModal(true);
+          return;
       }
+
+      // Priority 3: iOS (Scenario D)
+      if (isIOS) {
+          setShowIOSModal(true);
+          return;
+      }
+
+      // Priority 4: Android/Generic Fallback (Scenario E)
+      // If we are here, isMobile is likely true but nativePromptEvent is null.
+      setShowGenericModal(true);
   };
 
+  if (!visible) return null;
+
+  // Use the logo URL provided in requirements
   const LOGO_URL = "https://i.ibb.co/vxq7QfYd/retouch-2025121423241826.png";
 
   return (
     <>
-      <div className="fixed top-20 right-4 z-[9999] flex flex-col items-end gap-2">
+      <div className="fixed top-20 right-4 z-40 pointer-events-none flex flex-col items-end gap-2 animate-bounce-slow">
          <motion.button
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
@@ -217,7 +267,7 @@ const InstallAppFloating = () => {
             whileTap={{ scale: 0.9 }}
             onClick={handleClick}
             className="pointer-events-auto p-0 rounded-2xl shadow-xl shadow-blue-500/30 overflow-hidden border-2 border-white/20 bg-white"
-            title="安装应用 / Install App"
+            title="安装应用"
          >
             <img src={LOGO_URL} alt="Install" className="w-12 h-12 object-cover" />
          </motion.button>
@@ -240,7 +290,7 @@ const InstallAppFloating = () => {
         </div>
       )}
 
-      {/* Generic Mobile Modal (Android Fallback) */}
+      {/* Generic Modal (Android Fallback) */}
       {showGenericModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in" onClick={() => setShowGenericModal(false)}>
            <div className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative animate-scale-in" onClick={e => e.stopPropagation()}>
@@ -252,24 +302,6 @@ const InstallAppFloating = () => {
                     请点击浏览器菜单栏（通常在右上角三个点），手动选择 <span className="font-bold text-gray-800 dark:text-gray-200">“安装应用”</span> 或 <span className="font-bold">“添加到主屏幕”</span>。
                  </p>
                  <button onClick={() => setShowGenericModal(false)} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold">知道了</button>
-              </div>
-           </div>
-        </div>
-      )}
-
-      {/* Desktop Modal (Chrome/Edge Fallback) */}
-      {showDesktopModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in" onClick={() => setShowDesktopModal(false)}>
-           <div className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative animate-scale-in" onClick={e => e.stopPropagation()}>
-              <div className="flex flex-col items-center text-center">
-                 <Laptop className="w-12 h-12 text-blue-500 mb-4" />
-                 <h3 className="text-lg font-bold mb-2 dark:text-white">安装到电脑桌面</h3>
-                 <p className="text-sm text-gray-500 mb-6 leading-relaxed text-left">
-                    如果未自动弹出安装提示：<br/>
-                    1. 请查看浏览器 <span className="font-bold">地址栏右侧</span> 是否有 <span className="inline-block border p-0.5 rounded text-xs bg-gray-100">安装</span> 图标。<br/>
-                    2. 或点击浏览器右上角 <span className="font-bold">•••</span> 菜单，选择 <span className="font-bold">“安装 棱镜...”</span>。
-                 </p>
-                 <button onClick={() => setShowDesktopModal(false)} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold">知道了</button>
               </div>
            </div>
         </div>

@@ -22,6 +22,28 @@
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- PWA Install Event Capture (Must be in head to catch early events) -->
+    <script>
+      window.deferredPrompt = null;
+      
+      window.addEventListener('beforeinstallprompt', function(e) {
+        // Prevent Chrome 67 and earlier from automatically showing the prompt
+        e.preventDefault();
+        // Stash the event so it can be triggered later.
+        window.deferredPrompt = e;
+        console.log('[HTML] PWA Event Captured (beforeinstallprompt)');
+        
+        // Dispatch custom event for React to listen to
+        window.dispatchEvent(new Event('pwa-install-ready'));
+      });
+
+      window.addEventListener('appinstalled', () => {
+        window.deferredPrompt = null;
+        console.log('[HTML] PWA Installed');
+      });
+    </script>
+
     <script>
       tailwind.config = {
         darkMode: 'class',
@@ -36,20 +58,6 @@
           }
         }
       }
-    </script>
-    <script>
-      // 核心 PWA 事件捕获逻辑 - 移至 Head 确保最先执行
-      window.deferredPrompt = null;
-      
-      window.addEventListener('beforeinstallprompt', function(e) {
-        // 1. 阻止浏览器默认的底部横幅，以便我们稍后手动触发
-        e.preventDefault();
-        
-        // 2. 将事件保存到全局变量
-        window.deferredPrompt = e;
-        
-        console.log('[HTML] PWA Event Captured (window.deferredPrompt set)');
-      });
     </script>
     <style>
       /* 35.2 CSS Variables Mapping */
