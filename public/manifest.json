@@ -2,12 +2,14 @@
   "name": "棱镜",
   "short_name": "棱镜",
   "description": "StockWise-智能库管系统",
+  "id": "/",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#F2F3F7",
   "theme_color": "#F2F3F7",
   "orientation": "portrait",
   "scope": "/",
+  "categories": ["productivity", "business"],
   "icons": [
     {
       "src": "/icons/icon-192.png",
@@ -20,6 +22,22 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "StockWise Dashboard"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "StockWise Mobile View"
     }
   ]
 }

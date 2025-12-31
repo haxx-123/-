@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 import { X, Zap, ZapOff } from 'lucide-react';
 
@@ -12,6 +13,9 @@ declare global {
     Html5QrcodeSupportedFormats: any;
   }
 }
+
+// Simple Beep Sound (Base64) to avoid remote URL
+const BEEP_AUDIO = "data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU..."; 
 
 const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose }) => {
   const scannerRef = useRef<any>(null);
@@ -35,10 +39,25 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose }) => {
                 config,
                 (decodedText: string) => {
                     // Success callback
-                    // 1. Play beep
-                    const audio = new Audio('https://freetestdata.com/wp-content/uploads/2021/09/Free_Test_Data_1MB_MP3.mp3');
-                    audio.volume = 0.5;
-                    audio.play().catch(() => {});
+                    // 1. Play local beep
+                    try {
+                        // Creating context on the fly for simple beep or use HTMLAudioElement with base64
+                        // Using a simple oscillator is cleaner and purely local code
+                        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+                        if (AudioContext) {
+                            const ctx = new AudioContext();
+                            const osc = ctx.createOscillator();
+                            const gain = ctx.createGain();
+                            osc.connect(gain);
+                            gain.connect(ctx.destination);
+                            osc.frequency.value = 1500;
+                            gain.gain.value = 0.1;
+                            osc.start();
+                            setTimeout(() => osc.stop(), 100);
+                        }
+                    } catch (e) {
+                        // Ignore audio error
+                    }
                     
                     // 2. Stop immediately
                     html5QrCode.stop().then(() => {

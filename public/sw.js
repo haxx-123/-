@@ -1,6 +1,5 @@
 
-const CACHE_NAME = 'stockwise-v3'; // Version incremented
-// 26.3.2 Pre-cache list
+const CACHE_NAME = 'stockwise-v3'; 
 const URLS_TO_CACHE = [
   '/',
   '/index.html',
@@ -11,7 +10,6 @@ const URLS_TO_CACHE = [
 ];
 
 self.addEventListener('install', (event) => {
-  // 26.3.4 Immediate Control
   self.skipWaiting(); 
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
@@ -24,7 +22,6 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  // 26.3.4 Immediate Control
   event.waitUntil(
     Promise.all([
       self.clients.claim(),
@@ -41,30 +38,26 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// 26.3.1 & 26.3.3 Cache Strategies
 self.addEventListener('fetch', (event) => {
   const url = event.request.url;
 
-  // 1. API Requests & Supabase -> Network Only (Real-time data)
   if (url.includes('/api') || url.includes('supabase.co')) {
-      return; // Default to network
+      return; 
   }
 
-  // 2. Static Resources -> Cache First
   event.respondWith(
     caches.match(event.request).then((response) => {
       if (response) {
-        return response; // Return from cache
+        return response; 
       }
       
-      // Network fallback
       return fetch(event.request).then((response) => {
         if (!response || response.status !== 200 || response.type !== 'basic') {
           return response;
         }
 
-        // Cache new static assets dynamically
-        if (url.match(/\.(js|css|png|jpg|svg|json)$/)) {
+        // Added 'bin' to regex to support FaceAPI model shards caching
+        if (url.match(/\.(js|css|png|jpg|svg|json|bin)$/)) {
             const responseToCache = response.clone();
             caches.open(CACHE_NAME).then((cache) => {
               cache.put(event.request, responseToCache);
@@ -73,7 +66,6 @@ self.addEventListener('fetch', (event) => {
 
         return response;
       }).catch(() => {
-          // Offline fallback for navigation
           if (event.request.mode === 'navigate') {
               return caches.match('/index.html');
           }
