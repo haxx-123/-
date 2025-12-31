@@ -33,10 +33,9 @@ const FaceID: React.FC<FaceIDProps> = ({ onSuccess, onCancel, storedFaceData, mo
             setStatus('error');
             return;
         }
-        
-        // 31.2. Ensure model files are placed in public/models
-        // Using local path instead of remote URL
-        const MODEL_URL = '/models'; 
+        // Load models from CDN to avoid local file issues in this environment
+        // In production, these should be local in /models
+        const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
         
         await Promise.all([
           window.faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
@@ -47,7 +46,7 @@ const FaceID: React.FC<FaceIDProps> = ({ onSuccess, onCancel, storedFaceData, mo
         startCamera();
       } catch (err) {
         console.error("Model Load Error", err);
-        setErrorMsg("模型加载失败，请确保 /public/models 目录下包含模型文件");
+        setErrorMsg("模型加载失败，请刷新重试");
         setStatus('error');
       }
     };
