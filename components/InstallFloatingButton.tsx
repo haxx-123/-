@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { Download, X, Share, MoreVertical } from 'lucide-react'; // 确保安装了 lucide-react
 
@@ -19,13 +20,27 @@ export const InstallFloatingButton: React.FC = () => {
     }
 
     // 3. 监听浏览器的自动安装事件 (Android/Desktop)
+    // 关键修复：组件挂载时，先检查是否已经捕获了事件（由 index.html 中的脚本捕获）
+    if (window.deferredPrompt) {
+        setDeferredPrompt(window.deferredPrompt);
+        console.log("[React] Loaded existing PWA prompt from window");
+    }
+
     const handleBeforeInstallPrompt = (e: any) => {
       e.preventDefault(); // 阻止浏览器默认弹出的横幅
       setDeferredPrompt(e); // 保存事件，留给按钮点击用
-      console.log("PWA Install Prompt captured!");
+      window.deferredPrompt = e; // 同步到全局
+      console.log("[React] PWA Install Prompt captured!");
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    // 监听安装成功事件，清理状态
+    window.addEventListener('appinstalled', () => {
+        setDeferredPrompt(null);
+        window.deferredPrompt = null;
+        console.log("PWA Installed successfully");
+    });
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -42,6 +57,7 @@ export const InstallFloatingButton: React.FC = () => {
       const { outcome } = await deferredPrompt.userChoice;
       if (outcome === 'accepted') {
         setDeferredPrompt(null);
+        window.deferredPrompt = null;
       }
     } else {
       // B. 如果不支持自动安装 (iOS 或 桌面端未触发事件) -> 显示手动指引
