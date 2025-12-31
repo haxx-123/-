@@ -1,8 +1,9 @@
 
-const CACHE_NAME = 'stockwise-v7-prism-webapk';
+const CACHE_NAME = 'stockwise-v7-prism-webapk-fix';
 const URLS_TO_CACHE = [
   '/',
   '/index.html',
+  '/manifest.json', // Critical for offline install check
   '/logo.png',
   '/Signature.png',
   '/icons/icon-192.png',
@@ -16,7 +17,7 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('SW: Pre-caching resources including screenshots');
+      console.log('SW: Pre-caching resources including manifest and screenshots');
       return cache.addAll(URLS_TO_CACHE).catch(err => {
           console.warn('SW: Pre-cache warning', err);
       });
@@ -50,7 +51,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2. Static Resources (JS/CSS/Images) -> Cache First
+  // 2. Static Resources (JS/CSS/Images/Manifest) -> Cache First
   if (url.match(/\.(js|css|png|jpg|jpeg|svg|json|woff2)$/)) {
     event.respondWith(
       caches.match(event.request).then((response) => {
