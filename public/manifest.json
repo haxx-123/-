@@ -1,39 +1,23 @@
 {
-  "short_name": "棱镜",
-  "name": "棱镜-StockWise",
-  "description": "StockWise-智能库管系统",
-  "id": "/",
-  "start_url": "./index.html",
+  "name": "棱镜库存管理",
+  "short_name": "棱镜库存",
+  "start_url": "/",
   "display": "standalone",
-  "theme_color": "#F2F3F7",
-  "background_color": "#F2F3F7",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
   "orientation": "portrait",
   "icons": [
     {
       "src": "/icons/icon-192.png",
-      "type": "image/png",
       "sizes": "192x192",
+      "type": "image/png",
       "purpose": "any maskable"
     },
     {
       "src": "/icons/icon-512.png",
-      "type": "image/png",
       "sizes": "512x512",
+      "type": "image/png",
       "purpose": "any maskable"
-    }
-  ],
-  "screenshots": [
-    {
-      "src": "https://i.ibb.co/vxq7QfYd/retouch-2025121423241826.png",
-      "type": "image/png",
-      "form_factor": "narrow",
-      "label": "Mobile View"
-    },
-    {
-      "src": "https://i.ibb.co/vxq7QfYd/retouch-2025121423241826.png",
-      "type": "image/png",
-      "form_factor": "wide",
-      "label": "Desktop View"
     }
   ]
 }

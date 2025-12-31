@@ -17,7 +17,7 @@ import UsernameBadge from './components/UsernameBadge';
 import FaceID from './components/FaceID';
 import AnnouncementCenter from './components/AnnouncementCenter';
 import StoreManager from './components/StoreManager';
-import InstallFloatingButton from './components/InstallFloatingButton'; // New Import
+import { InstallFloatingButton } from './components/InstallFloatingButton'; // Updated Import to Named Export
 import { supabase } from './supabase';
 
 // 7.1. 实施路由懒加载 (Route-based Code Splitting)
@@ -269,7 +269,7 @@ const Sidebar = () => {
             <span className="font-medium dark:text-gray-200 truncate pr-2">当前为{currentStore.name}门店{currentStore.isParent ? '(母)' : '(子)'}</span>
             <RefreshCw className="w-4 h-4 text-gray-500 flex-shrink-0" />
           </button>
-          {user?.permissions?.hideStoreEdit && <div className="w-full py-2 px-4 mb-4 bg-gray-50 dark:bg-gray-900 rounded-xl flex items-center justify-between border dark:border-gray-700"><span className="font-medium dark:text-gray-400 truncate text-sm">{currentStore.name}{currentStore.isParent ? '(母)' : '(子)'}</span></div>}
+          {user?.permissions?.hideStoreEdit && <div className="w-full py-2 px-4 mb-4 bg-gray-50 dark:bg-gray-900 rounded-xl flex items-center justify-between border dark:border-gray-700"><span className="font-medium dark:text-gray-400 truncate text-sm">当前为{currentStore.name}门店{currentStore.isParent ? '(母)' : '(子)'}</span></div>}
           <nav className="space-y-1">
             {menuItems.filter(i => !i.hidden).map((item) => {
               const isActive = location.pathname === item.path;
