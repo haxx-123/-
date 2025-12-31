@@ -1,6 +1,7 @@
 {
   "name": "棱镜库存管理",
   "short_name": "棱镜库存",
+  "id": "/",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
@@ -8,13 +9,13 @@
   "orientation": "portrait",
   "icons": [
     {
-      "src": "https://i.ibb.co/vxq7QfYd/retouch-2025121423241826.png",
+      "src": "/icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "https://i.ibb.co/vxq7QfYd/retouch-2025121423241826.png",
+      "src": "/icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
