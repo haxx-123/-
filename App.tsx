@@ -17,6 +17,7 @@ import UsernameBadge from './components/UsernameBadge';
 import FaceID from './components/FaceID';
 import AnnouncementCenter from './components/AnnouncementCenter';
 import StoreManager from './components/StoreManager';
+import InstallFloatingButton from './components/InstallFloatingButton'; // New Import
 import { supabase } from './supabase';
 
 // 7.1. 实施路由懒加载 (Route-based Code Splitting)
@@ -116,213 +117,7 @@ const SWUpdateToast = () => {
     );
 };
 
-// --- 27. InstallAppFloating (Enhanced & Robust) ---
-const InstallAppFloating = () => {
-  const [nativePromptEvent, setNativePromptEvent] = useState<any>(null);
-  const [visible, setVisible] = useState(false);
-  
-  // Modals
-  const [showIOSModal, setShowIOSModal] = useState(false);
-  const [showGenericModal, setShowGenericModal] = useState(false);
-  const [showInAppOverlay, setShowInAppOverlay] = useState(false);
-
-  // Environment Flags
-  const [isIOS, setIsIOS] = useState(false);
-  const [isInApp, setIsInApp] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
-  const [isStandalone, setIsStandalone] = useState(false);
-
-  useEffect(() => {
-    // 1. Environment Detection
-    const ua = navigator.userAgent;
-    const _isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    const _isInApp = /MicroMessenger|DingTalk/i.test(ua);
-    const _isMobile = /Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua) || _isIOS;
-    
-    // 27.2.1 Guard Clause (Standalone Check)
-    const _isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
-                          (window.navigator as any).standalone === true ||
-                          window.location.search.includes('source=pwa');
-
-    setIsIOS(_isIOS);
-    setIsInApp(_isInApp);
-    setIsMobile(_isMobile);
-    setIsStandalone(_isStandalone);
-
-    // 2. Event Listeners
-    const handleNative = (e: any) => {
-        e.preventDefault();
-        console.log('[React] Captured beforeinstallprompt event');
-        setNativePromptEvent(e);
-    };
-
-    const handleAppInstalled = () => {
-        console.log('[React] App Installed');
-        setNativePromptEvent(null);
-        setVisible(false);
-    };
-
-    window.addEventListener('beforeinstallprompt', handleNative);
-    window.addEventListener('appinstalled', handleAppInstalled);
-    window.addEventListener('pwa-install-ready', () => {
-         if ((window as any).deferredPrompt) {
-             setNativePromptEvent((window as any).deferredPrompt);
-         }
-    });
-
-    // 3. Aggressive Polling for deferredPrompt (Crucial for race conditions)
-    // Sometimes the event fires before React hydrates.
-    const pollInterval = setInterval(() => {
-        if ((window as any).deferredPrompt && !nativePromptEvent) {
-            console.log('[React] Polled deferredPrompt');
-            setNativePromptEvent((window as any).deferredPrompt);
-        }
-    }, 1000);
-
-    return () => {
-        window.removeEventListener('beforeinstallprompt', handleNative);
-        window.removeEventListener('appinstalled', handleAppInstalled);
-        clearInterval(pollInterval);
-    };
-  }, [nativePromptEvent]);
-
-  // Visibility Logic (Section 27.2)
-  useEffect(() => {
-      if (isStandalone) {
-          setVisible(false);
-          return;
-      }
-
-      // Scenario A: Guard Clause handled above.
-
-      // Scenario C: Auto Install Supported (Event Captured)
-      // Works on Mobile Android Chrome & PC Desktop Chrome/Edge
-      if (nativePromptEvent) {
-          setVisible(true);
-          return;
-      }
-
-      // Scenario B (InApp), D (iOS), E (Mobile Non-Standard)
-      // Even if no event, we show icon on mobile to provide guides.
-      if (isMobile || isInApp || isIOS) {
-          setVisible(true);
-          return;
-      }
-
-      // Scenario F: PC Desktop - Non-Chrome/Edge (No event)
-      // "Hide icon"
-      setVisible(false);
-
-  }, [isStandalone, nativePromptEvent, isMobile, isInApp, isIOS]);
-
-  const handleClick = async () => {
-      // Priority 1: Native Prompt (Scenario C)
-      if (nativePromptEvent) {
-          try {
-              await nativePromptEvent.prompt();
-              const { outcome } = await nativePromptEvent.userChoice;
-              console.log(`Install outcome: ${outcome}`);
-              if (outcome === 'accepted') {
-                  setNativePromptEvent(null);
-                  (window as any).deferredPrompt = null;
-                  setVisible(false);
-              }
-          } catch (e) {
-              console.error("Install failed", e);
-              // Fallback if prompt fails
-              setShowGenericModal(true);
-          }
-          return;
-      }
-
-      // Priority 2: In-App Browser (Scenario B)
-      if (isInApp) {
-          setShowInAppOverlay(true);
-          return;
-      }
-
-      // Priority 3: iOS (Scenario D)
-      if (isIOS) {
-          setShowIOSModal(true);
-          return;
-      }
-
-      // Priority 4: Android/Generic Fallback (Scenario E)
-      // If we are here, isMobile is likely true but nativePromptEvent is null.
-      setShowGenericModal(true);
-  };
-
-  if (!visible) return null;
-
-  // Use the logo URL provided in requirements
-  const LOGO_URL = "https://i.ibb.co/vxq7QfYd/retouch-2025121423241826.png";
-
-  return (
-    <>
-      <div className="fixed top-20 right-4 z-40 pointer-events-none flex flex-col items-end gap-2 animate-bounce-slow">
-         <motion.button
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={handleClick}
-            className="pointer-events-auto p-0 rounded-2xl shadow-xl shadow-blue-500/30 overflow-hidden border-2 border-white/20 bg-white"
-            title="安装应用"
-         >
-            <img src={LOGO_URL} alt="Install" className="w-12 h-12 object-cover" />
-         </motion.button>
-      </div>
-
-      {/* iOS Modal */}
-      {showIOSModal && (
-        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in" onClick={() => setShowIOSModal(false)}>
-           <div className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative animate-slide-up border border-gray-100 dark:border-gray-700" onClick={e => e.stopPropagation()}>
-              <div className="flex flex-col items-center text-center">
-                 <Share className="w-12 h-12 text-blue-500 mb-4" />
-                 <h3 className="text-lg font-bold mb-2 dark:text-white">安装到 iOS 主屏幕</h3>
-                 <p className="text-sm text-gray-500 mb-6 leading-relaxed">
-                    1. 轻点底部/顶部的 <span className="font-bold text-blue-600 inline-flex items-center"><Share className="w-3 h-3 mx-1"/></span> 分享按钮<br/>
-                    2. 在菜单中选择 <span className="font-bold text-gray-800 dark:text-gray-200">“添加到主屏幕”</span>
-                 </p>
-                 <button onClick={() => setShowIOSModal(false)} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold">知道了</button>
-              </div>
-           </div>
-        </div>
-      )}
-
-      {/* Generic Modal (Android Fallback) */}
-      {showGenericModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in" onClick={() => setShowGenericModal(false)}>
-           <div className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative animate-scale-in" onClick={e => e.stopPropagation()}>
-              <div className="flex flex-col items-center text-center">
-                 <MoreVertical className="w-12 h-12 text-gray-500 mb-4" />
-                 <h3 className="text-lg font-bold mb-2 dark:text-white">安装到主屏幕</h3>
-                 <p className="text-sm text-gray-500 mb-6 leading-relaxed">
-                    浏览器未自动弹出安装请求。<br/>
-                    请点击浏览器菜单栏（通常在右上角三个点），手动选择 <span className="font-bold text-gray-800 dark:text-gray-200">“安装应用”</span> 或 <span className="font-bold">“添加到主屏幕”</span>。
-                 </p>
-                 <button onClick={() => setShowGenericModal(false)} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold">知道了</button>
-              </div>
-           </div>
-        </div>
-      )}
-
-      {/* In-App Overlay */}
-      {showInAppOverlay && (
-          <div className="fixed inset-0 z-[100] bg-black/90 flex flex-col items-end p-5 animate-fade-in" onClick={() => setShowInAppOverlay(false)}>
-              <div className="flex flex-col items-end gap-2">
-                  <ArrowUp className="w-10 h-10 text-white animate-bounce" />
-                  <div className="text-white font-bold text-lg text-right">
-                      请点击右上角 <span className="text-yellow-400">•••</span><br/>
-                      选择 <span className="text-yellow-400">在浏览器打开</span><br/>
-                      以安装应用
-                  </div>
-              </div>
-          </div>
-      )}
-    </>
-  );
-};
+// Removed old InstallAppFloating component
 
 const Navbar = () => {
   const { toggleSidebar, currentStore, setAnnouncementsOpen, user, announcements, handleCopy, handleExcel } = useApp();
@@ -561,6 +356,9 @@ const Login = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900 px-4">
+      {/* 27.2.1 Ensure install button shows on login too */}
+      <InstallFloatingButton />
+      
       {useFaceID && <FaceID onSuccess={handleFaceSuccess} onCancel={() => setUseFaceID(false)} storedFaceData={targetFaceData} mode="verify" />}
       <div className="w-full max-w-md bg-white dark:bg-gray-800 p-8 rounded-3xl shadow-xl">
         <div className="text-center mb-8">
@@ -615,7 +413,7 @@ const MainLayout = () => {
     <div className="min-h-screen text-gray-900 dark:text-gray-100 transition-colors duration-300 font-sans">
       <Sidebar />
       <Navbar />
-      <InstallAppFloating />
+      <InstallFloatingButton />
       <SWUpdateToast />
       <ModalContainer isOpen={announcementsOpen}><AnnouncementCenter onClose={() => setAnnouncementsOpen(false)} initialPopup={activePopupAnnouncement} /></ModalContainer>
       <ModalContainer isOpen={storeManagerOpen}><StoreManager onClose={() => setStoreManagerOpen(false)} /></ModalContainer>
