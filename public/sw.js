@@ -1,12 +1,14 @@
 
-const CACHE_NAME = 'stockwise-v7-prism';
+const CACHE_NAME = 'stockwise-v7-prism-webapk';
 const URLS_TO_CACHE = [
   '/',
   '/index.html',
   '/logo.png',
   '/Signature.png',
   '/icons/icon-192.png',
-  '/icons/icon-512.png'
+  '/icons/icon-512.png',
+  '/screenshots/mobile.png',
+  '/screenshots/desktop.png'
 ];
 
 // 26.3.4 Immediate Control
@@ -14,7 +16,7 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('SW: Pre-caching resources');
+      console.log('SW: Pre-caching resources including screenshots');
       return cache.addAll(URLS_TO_CACHE).catch(err => {
           console.warn('SW: Pre-cache warning', err);
       });
