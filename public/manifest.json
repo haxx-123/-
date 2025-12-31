@@ -8,13 +8,13 @@
   "orientation": "portrait",
   "icons": [
     {
-      "src": "/icons/icon-192.png",
+      "src": "https://i.ibb.co/vxq7QfYd/retouch-2025121423241826.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/icons/icon-512.png",
+      "src": "https://i.ibb.co/vxq7QfYd/retouch-2025121423241826.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
