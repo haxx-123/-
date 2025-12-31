@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'stockwise-v5'; // Upgraded version to force re-cache and manifest update
+const CACHE_NAME = 'stockwise-v6'; // Upgraded version to force re-cache and manifest update
 // 26.3.2 Pre-cache list
 const URLS_TO_CACHE = [
   '/',
@@ -7,7 +7,10 @@ const URLS_TO_CACHE = [
   '/logo.png',
   '/Signature.png',
   '/icons/icon-192.png',
-  '/icons/icon-512.png'
+  '/icons/icon-512.png',
+  // Adding screenshots to cache ensures they are reachable and valid
+  '/screenshots/mobile.png',
+  '/screenshots/desktop.png'
 ];
 
 self.addEventListener('install', (event) => {
@@ -70,7 +73,7 @@ self.addEventListener('fetch', (event) => {
           return response;
         }
 
-        // Cache new static assets dynamically
+        // Cache new static assets dynamically (images, js, css, json)
         if (url.match(/\.(js|css|png|jpg|svg|json)$/)) {
             const responseToCache = response.clone();
             caches.open(CACHE_NAME).then((cache) => {
