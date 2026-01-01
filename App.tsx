@@ -17,6 +17,7 @@ import AnnouncementCenter from './components/AnnouncementCenter';
 import StoreManager from './components/StoreManager';
 import { InstallFloatingButton } from './components/InstallFloatingButton'; 
 import { supabase } from './supabase';
+import { useRealtime } from './hooks/useRealtime';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Inventory = lazy(() => import('./pages/Inventory'));
@@ -434,6 +435,136 @@ const AppContent = () => {
   const [stores, setStores] = useState<Store[]>([]); 
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
 
+  // --- Realtime Subscriptions (Global) ---
+  
+  // 1. Logs: Append new logs
+  useRealtime('operation_logs', (payload) => {
+      const { eventType, new: newRow } = payload;
+      if (eventType === 'INSERT') {
+          const mappedLog = { ...newRow, id: String(newRow.id), target_id: String(newRow.target_id) };
+          setLogs(prev => [mappedLog, ...prev]);
+      } else if (eventType === 'UPDATE') {
+          setLogs(prev => prev.map(l => l.id === String(newRow.id) ? { ...newRow, id: String(newRow.id) } : l));
+      }
+  });
+
+  // 2. Announcements: Update list and badges
+  useRealtime('announcements', (payload) => {
+      const { eventType, new: newRow, old: oldRow } = payload;
+      if (eventType === 'INSERT') {
+          const mapped = { ...newRow, id: String(newRow.id), target_userIds: newRow.target_user_ids?.map(String) };
+          setAnnouncements(prev => [mapped, ...prev]);
+      } else if (eventType === 'UPDATE') {
+          const mapped = { ...newRow, id: String(newRow.id), target_userIds: newRow.target_user_ids?.map(String) };
+          setAnnouncements(prev => prev.map(a => a.id === mapped.id ? mapped : a));
+      } else if (eventType === 'DELETE') {
+          setAnnouncements(prev => prev.filter(a => a.id !== String(oldRow.id)));
+      }
+  });
+
+  // 3. Users: Update list & Self Permission Check
+  useRealtime('users', (payload) => {
+      const { eventType, new: newRow, old: oldRow } = payload;
+      if (eventType === 'INSERT' || eventType === 'UPDATE') {
+          const mappedUser = { ...newRow, id: String(newRow.id), storeId: newRow.store_id ? String(newRow.store_id) : undefined };
+          setUsers(prev => {
+              const exists = prev.some(u => u.id === mappedUser.id);
+              if (exists) return prev.map(u => u.id === mappedUser.id ? mappedUser : u);
+              return [...prev, mappedUser];
+          });
+          
+          // Permission Hot-Update
+          if (user && mappedUser.id === user.id) {
+              const mergedUser = { ...user, ...mappedUser };
+              setUser(mergedUser);
+              localStorage.setItem('prism_user', JSON.stringify(mergedUser));
+          }
+      } else if (eventType === 'DELETE') {
+          setUsers(prev => prev.filter(u => u.id !== String(oldRow.id)));
+          if (user && user.id === String(oldRow.id)) {
+              alert("您的账号已被删除");
+              logout();
+          }
+      }
+  });
+
+  // 4. Products & Batches (Inventory Sync)
+  useRealtime('products', (payload) => {
+      const { eventType, new: newRow, old: oldRow } = payload;
+      if (eventType === 'DELETE') {
+          setProducts(prev => prev.filter(p => p.id !== String(oldRow.id)));
+          return;
+      }
+      // For Insert/Update, we need nested batches.
+      // Optimistic/Hybrid: Update local fields, but keep existing batches if update.
+      if (eventType === 'UPDATE') {
+          setProducts(prev => prev.map(p => {
+              if (p.id === String(newRow.id)) {
+                  return { 
+                      ...p, 
+                      ...newRow, 
+                      id: String(newRow.id), 
+                      storeId: String(newRow.store_id),
+                      unitBig: newRow.unit_big,
+                      unitSmall: newRow.unit_small,
+                      conversionRate: newRow.conversion_rate,
+                      quantityBig: newRow.quantity_big,
+                      quantitySmall: newRow.quantity_small,
+                      // Preserve batches array from state as generic realtime doesn't return relations
+                      batches: p.batches 
+                  };
+              }
+              return p;
+          }));
+      } else if (eventType === 'INSERT') {
+          // For new products, fetch complete row to get empty batches array structure
+          // Or just add with empty batches
+          const mapped = { 
+              ...newRow, 
+              id: String(newRow.id), 
+              storeId: String(newRow.store_id),
+              unitBig: newRow.unit_big,
+              unitSmall: newRow.unit_small,
+              conversionRate: newRow.conversion_rate,
+              quantityBig: newRow.quantity_big,
+              quantitySmall: newRow.quantity_small,
+              batches: []
+          };
+          setProducts(prev => [...prev, mapped]);
+      }
+  });
+
+  useRealtime('batches', (payload) => {
+      const { eventType, new: newRow, old: oldRow } = payload;
+      // Map Snake to Camel
+      const mapBatch = (r: any) => ({
+          id: String(r.id),
+          batchNumber: r.batch_number,
+          expiryDate: r.expiry_date,
+          totalQuantity: Number(r.total_quantity),
+          conversionRate: r.conversion_rate,
+          price: r.price,
+          notes: r.notes
+      });
+
+      setProducts(prev => prev.map(p => {
+          const pId = newRow?.product_id || oldRow?.product_id;
+          if (String(p.id) !== String(pId)) return p;
+
+          let newBatches = [...p.batches];
+          if (eventType === 'INSERT') {
+              newBatches.push(mapBatch(newRow));
+          } else if (eventType === 'UPDATE') {
+              newBatches = newBatches.map(b => b.id === String(newRow.id) ? mapBatch(newRow) : b);
+          } else if (eventType === 'DELETE') {
+              newBatches = newBatches.filter(b => b.id !== String(oldRow.id));
+          }
+          return { ...p, batches: newBatches };
+      }));
+  });
+
+  // --- End Realtime ---
+
   useEffect(() => {
       const storedUser = localStorage.getItem('prism_user');
       if (storedUser) {
@@ -533,14 +664,8 @@ const AppContent = () => {
         if (sessionStorage.getItem(sessionKey)) return;
         const potentialPopups = announcements.filter(a => 
             a.popup_config?.enabled && 
-            // 22.4.2 & Popup Logic:
-            // 1. If no target_userIds (empty) -> All visible
-            // 2. If user in target_userIds -> Visible
-            // 3. If user.role < author_role -> Higher permission, NO POPUP per spec
-            ((!a.target_userIds || a.target_userIds.length === 0) || a.target_userIds.includes(user.id)) &&
-            // Note: Higher permission logic implies NO POPUP for higher rank even if visible in list
-            // So if user.role < author_role, exclude from popup
-            (!a.author_role || user.role >= a.author_role)
+            (!a.target_userIds || a.target_userIds.length === 0 || a.target_userIds.includes(user.id)) &&
+            (!a.target_roles || a.target_roles.length === 0 || a.target_roles.includes(user.role))
         );
         let targetPopup: Announcement | null = null;
         const now = new Date();
