@@ -488,28 +488,30 @@ const AppContent = () => {
       }
   });
 
-  // 4. Products & Batches (Inventory Sync)
+  // 4. Products Sync (Parent Row)
+  // This listener now receives the event fired by the SQL Trigger "update_product_total_quantity"
   useRealtime('products', (payload) => {
       const { eventType, new: newRow, old: oldRow } = payload;
       if (eventType === 'DELETE') {
           setProducts(prev => prev.filter(p => p.id !== String(oldRow.id)));
           return;
       }
-      // For Insert/Update, we need nested batches.
-      // Optimistic/Hybrid: Update local fields, but keep existing batches if update.
+      
       if (eventType === 'UPDATE') {
           setProducts(prev => prev.map(p => {
+              // Critical: Match by ID and update the calculated quantities from DB Trigger
               if (p.id === String(newRow.id)) {
                   return { 
                       ...p, 
                       ...newRow, 
                       id: String(newRow.id), 
                       storeId: String(newRow.store_id),
+                      // Map snake_case from DB trigger update to camelCase for app state
+                      quantityBig: newRow.quantity_big,
+                      quantitySmall: newRow.quantity_small,
                       unitBig: newRow.unit_big,
                       unitSmall: newRow.unit_small,
                       conversionRate: newRow.conversion_rate,
-                      quantityBig: newRow.quantity_big,
-                      quantitySmall: newRow.quantity_small,
                       // Preserve batches array from state as generic realtime doesn't return relations
                       batches: p.batches 
                   };
@@ -517,26 +519,25 @@ const AppContent = () => {
               return p;
           }));
       } else if (eventType === 'INSERT') {
-          // For new products, fetch complete row to get empty batches array structure
-          // Or just add with empty batches
           const mapped = { 
               ...newRow, 
               id: String(newRow.id), 
               storeId: String(newRow.store_id),
+              quantityBig: newRow.quantity_big,
+              quantitySmall: newRow.quantity_small,
               unitBig: newRow.unit_big,
               unitSmall: newRow.unit_small,
               conversionRate: newRow.conversion_rate,
-              quantityBig: newRow.quantity_big,
-              quantitySmall: newRow.quantity_small,
-              batches: []
+              batches: [] // New products start with no batches locally
           };
           setProducts(prev => [...prev, mapped]);
       }
   });
 
+  // 5. Batches Sync (Child Rows / Accordion)
   useRealtime('batches', (payload) => {
       const { eventType, new: newRow, old: oldRow } = payload;
-      // Map Snake to Camel
+      
       const mapBatch = (r: any) => ({
           id: String(r.id),
           batchNumber: r.batch_number,
@@ -549,6 +550,7 @@ const AppContent = () => {
 
       setProducts(prev => prev.map(p => {
           const pId = newRow?.product_id || oldRow?.product_id;
+          // Only update the product that owns this batch
           if (String(p.id) !== String(pId)) return p;
 
           let newBatches = [...p.batches];
