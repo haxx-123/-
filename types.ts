@@ -17,11 +17,14 @@ export enum RoleLevel {
   MANAGER_OLIVE = '04',
   MANAGER_GRAY = '05',
   STAFF = '06',
+  LEVEL_07 = '07',
+  LEVEL_08 = '08',
   GUEST = '09'
 }
 
 export type LogPermissionLevel = 'A' | 'B' | 'C' | 'D';
 
+// ... (rest of file is same)
 export interface UserPermissions {
   // Feature Hiding (Entrance Control)
   hideAuditHall?: boolean;      // 隐藏审计大厅

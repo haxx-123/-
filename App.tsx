@@ -88,9 +88,9 @@ const SWUpdateToast = () => {
     const handleReload = () => window.location.reload();
     if (!show) return null;
     return (
-        <div className="fixed bottom-20 left-1/2 transform -translate-x-1/2 z-[100] animate-bounce-slow w-max">
-            <button onClick={handleReload} className="bg-blue-600 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-2 font-bold hover:bg-blue-700 transition-colors border-2 border-white/20">
-                <RefreshCw className="w-5 h-5 animate-spin" /> 发现新版本，请刷新以更新
+        <div className="fixed bottom-20 left-1/2 transform -translate-x-1/2 z-[100] animate-bounce-slow w-[90%] max-w-sm">
+            <button onClick={handleReload} className="bg-blue-600 text-white w-full py-3 rounded-full shadow-2xl flex items-center justify-center gap-2 font-bold hover:bg-blue-700 transition-colors border-2 border-white/20 text-sm">
+                <RefreshCw className="w-4 h-4 animate-spin" /> 发现新版本，请刷新以更新
             </button>
         </div>
     );
@@ -98,14 +98,15 @@ const SWUpdateToast = () => {
 
 const Navbar = () => {
   const { toggleSidebar, currentStore, setAnnouncementsOpen, user, announcements, handleCopy, handleExcel } = useApp();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
   
   const unreadCount = announcements.filter(a => {
       if (a.hidden_by_users?.includes(user?.id || '')) return false;
       let isTarget = false;
-      if (!a.target_userIds || a.target_userIds.length === 0) isTarget = true;
-      else if (a.target_userIds.includes(user?.id || '')) isTarget = true;
+      if (!a.target_userIds || a.target_userIds.length === 0) isTarget = true; // All
+      else if (a.target_userIds.includes(user?.id || '')) isTarget = true; // Targeted
+      else if (user?.role && a.author_role && user.role < a.author_role) isTarget = true; // Higher rank see all
+      
       if (!isTarget) return false;
       return !a.read_user_ids.includes(user?.id || '');
   }).length;
@@ -180,22 +181,16 @@ const Navbar = () => {
         <img src={APP_LOGO_URL} alt="Logo" className="w-6 h-6 mr-3 rounded-md" />
         棱镜-StockWise <span className="mx-2 text-gray-400">/</span> {currentStore.name}
       </div>
-      <div className="flex items-center space-x-2">
-         <div className="hidden md:flex items-center space-x-2"><ActionButtons /></div>
-         <div className="md:hidden relative">
-            <motion.button whileTap={{ scale: 0.9 }} onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
-                <MoreHorizontal className="w-6 h-6 text-gray-700 dark:text-gray-300" />
-                {hasRedDot && <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>}
-            </motion.button>
-            {mobileMenuOpen && <div className="absolute right-0 top-12 bg-white dark:bg-gray-800 shadow-xl rounded-xl p-2 flex flex-col gap-2 border dark:border-gray-700 min-w-[50px] items-center animate-fade-in"><ActionButtons /></div>}
-         </div>
+      <div className="flex items-center space-x-1">
+         {/* Show ActionButtons on both mobile and desktop directly */}
+         <ActionButtons />
       </div>
     </div>
   );
 };
 
 const Sidebar = () => {
-  const { isSidebarOpen, toggleSidebar, currentStore, setStoreManagerOpen, user, logout } = useApp();
+  const { isSidebarOpen, toggleSidebar, currentStore, setStoreManagerOpen, user, logout, stores } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
   const menuItems = [
@@ -208,6 +203,19 @@ const Sidebar = () => {
   ];
   const sidebarClass = `fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-900 border-r dark:border-gray-700 transform transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`;
 
+  // Store Display Logic
+  const isParent = currentStore.isParent;
+  const parentStore = !isParent && currentStore.parentId ? stores.find(s => s.id === currentStore.parentId) : null;
+  
+  let storeColorClass = "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200";
+  if (isParent) {
+      storeColorClass = "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300";
+  } else if (parentStore) {
+      storeColorClass = "bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300";
+  } else {
+      storeColorClass = "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300";
+  }
+
   return (
     <>
       {isSidebarOpen && <div className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden" onClick={toggleSidebar}></div>}
@@ -219,11 +227,10 @@ const Sidebar = () => {
            <button onClick={toggleSidebar} className="ml-auto lg:hidden"><X className="w-5 h-5" /></button>
         </div>
         <div className="p-4">
-          <button onClick={() => setStoreManagerOpen(true)} disabled={user?.permissions?.hideStoreEdit} className={`w-full py-2 px-4 mb-4 bg-gray-100 dark:bg-gray-800 rounded-xl flex items-center justify-between transition-colors ${user?.permissions?.hideStoreEdit ? 'opacity-50 cursor-not-allowed hidden' : 'hover:bg-gray-200 dark:hover:bg-gray-700'}`}>
-            <span className="font-medium dark:text-gray-200 truncate pr-2">当前为{currentStore.name}门店{currentStore.isParent ? '(母)' : '(子)'}</span>
-            <RefreshCw className="w-4 h-4 text-gray-500 flex-shrink-0" />
+          <button onClick={() => setStoreManagerOpen(true)} disabled={user?.permissions?.hideStoreEdit} className={`w-full py-2.5 px-4 mb-4 rounded-xl flex items-center justify-between transition-colors ${storeColorClass} ${user?.permissions?.hideStoreEdit ? 'opacity-80 cursor-default' : 'hover:opacity-90'}`}>
+            <span className="font-bold truncate pr-2">{currentStore.name}{currentStore.isParent ? '(母)' : '(子)'}</span>
+            {!user?.permissions?.hideStoreEdit && <RefreshCw className="w-4 h-4 opacity-70 flex-shrink-0" />}
           </button>
-          {user?.permissions?.hideStoreEdit && <div className="w-full py-2 px-4 mb-4 bg-gray-50 dark:bg-gray-900 rounded-xl flex items-center justify-between border dark:border-gray-700"><span className="font-medium dark:text-gray-400 truncate text-sm">当前为{currentStore.name}门店{currentStore.isParent ? '(母)' : '(子)'}</span></div>}
           <nav className="space-y-1">
             {menuItems.filter(i => !i.hidden).map((item) => {
               const isActive = location.pathname === item.path;
@@ -309,9 +316,7 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900 px-4">
-      {/* 28. Floating Install Button visible on Login too */}
-      <InstallFloatingButton />
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 dark:bg-gray-900 px-4">
       {useFaceID && <FaceID onSuccess={handleFaceSuccess} onCancel={() => setUseFaceID(false)} storedFaceData={targetFaceData} mode="verify" />}
       <div className="w-full max-w-md bg-white dark:bg-gray-800 p-8 rounded-3xl shadow-xl">
         <div className="text-center mb-8">
@@ -327,6 +332,7 @@ const Login = () => {
           <motion.button whileTap={{ scale: 0.98 }} onClick={handleFaceIDClick} className="w-full py-3 border-2 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 rounded-xl font-bold hover:bg-gray-50 flex items-center justify-center gap-2"><UserCircle className="w-5 h-5" /> 人脸识别登录</motion.button>
         </div>
       </div>
+      <InstallFloatingButton mode="static" />
     </div>
   );
 };
@@ -355,7 +361,7 @@ const SplashScreen = ({ isReady }: { isReady: boolean }) => {
   return (
     <div id="splash-screen">
       {/* 27.1.1 Core Visuals (Center) */}
-      <div className="flex flex-col items-center animate-fade-in-up">
+      <div className="flex flex-col items-center animate-fade-in-up mt-[-10vh]">
          {/* 26.4.1 Localized Logo */}
          <img src={APP_LOGO_URL} alt="Logo" className="w-24 h-24 rounded-2xl shadow-xl mb-6" />
          <h1 className="text-3xl font-bold text-gray-800 tracking-wider">棱镜</h1>
@@ -384,7 +390,6 @@ const MainLayout = () => {
     <div className="min-h-screen text-gray-900 dark:text-gray-100 transition-colors duration-300 font-sans">
       <Sidebar />
       <Navbar />
-      <InstallFloatingButton />
       <SWUpdateToast />
       <ModalContainer isOpen={announcementsOpen}><AnnouncementCenter onClose={() => setAnnouncementsOpen(false)} initialPopup={activePopupAnnouncement} /></ModalContainer>
       <ModalContainer isOpen={storeManagerOpen}><StoreManager onClose={() => setStoreManagerOpen(false)} /></ModalContainer>
@@ -528,8 +533,14 @@ const AppContent = () => {
         if (sessionStorage.getItem(sessionKey)) return;
         const potentialPopups = announcements.filter(a => 
             a.popup_config?.enabled && 
-            (!a.target_userIds || a.target_userIds.length === 0 || a.target_userIds.includes(user.id)) &&
-            (!a.target_roles || a.target_roles.length === 0 || a.target_roles.includes(user.role))
+            // 22.4.2 & Popup Logic:
+            // 1. If no target_userIds (empty) -> All visible
+            // 2. If user in target_userIds -> Visible
+            // 3. If user.role < author_role -> Higher permission, NO POPUP per spec
+            ((!a.target_userIds || a.target_userIds.length === 0) || a.target_userIds.includes(user.id)) &&
+            // Note: Higher permission logic implies NO POPUP for higher rank even if visible in list
+            // So if user.role < author_role, exclude from popup
+            (!a.author_role || user.role >= a.author_role)
         );
         let targetPopup: Announcement | null = null;
         const now = new Date();

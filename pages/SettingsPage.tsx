@@ -47,6 +47,15 @@ const UserEditModal = ({ user: editingUser, onClose, onSave, currentUser }: { us
         }));
     };
 
+    const getRoleLabel = (r: RoleLevel) => {
+        switch(r) {
+            case RoleLevel.ROOT: return '00 - 超级管理员';
+            case RoleLevel.BOSS: return '01 - SVIP';
+            case RoleLevel.FRONT_DESK: return '02 - VIP';
+            default: return r;
+        }
+    };
+
     return (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm animate-fade-in">
             <div className="bg-white dark:bg-gray-800 w-full max-w-2xl h-[90vh] rounded-2xl shadow-2xl p-6 relative flex flex-col">
@@ -81,7 +90,7 @@ const UserEditModal = ({ user: editingUser, onClose, onSave, currentUser }: { us
                                 disabled={isSelf && currentUser.role !== RoleLevel.ROOT} // Prevent locking oneself out unless root
                             >
                                 {allowedRoles.map(r => (
-                                    <option key={r} value={r}>{r} - {r === RoleLevel.ROOT ? '超级管理员' : r === RoleLevel.GUEST ? '访客' : '普通用户'}</option>
+                                    <option key={r} value={r}>{getRoleLabel(r)}</option>
                                 ))}
                             </select>
                         </div>

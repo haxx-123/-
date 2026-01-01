@@ -455,9 +455,9 @@ const StoreManager: React.FC<StoreManagerProps> = ({ onClose }) => {
                          </div>
                       )}
 
-                      {/* Edit Actions - 4.6.1 修改按钮 */}
+                      {/* Edit Actions - 4.6.1 修改按钮 - Visible always if permitted */}
                       {canManage && !user?.permissions?.hideStoreEdit && (
-                        <div className="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="absolute bottom-4 right-4">
                            <button 
                              onClick={(e) => { e.stopPropagation(); handleEdit(store); }} 
                              className="flex items-center gap-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-lg hover:bg-blue-600 hover:text-white transition-colors text-sm font-bold"

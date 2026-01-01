@@ -1,11 +1,16 @@
 
 import React, { useEffect, useState } from 'react';
-import { X, Share, ArrowUp, MoreVertical, Check, Download } from 'lucide-react';
+import { X, Share, ArrowUp, MoreVertical, Check, Download, Settings2 } from 'lucide-react';
 import { APP_LOGO_URL } from '../constants';
 
 type InstallEnv = 'hidden' | 'wechat' | 'native' | 'ios' | 'android-manual';
 
-export const InstallFloatingButton: React.FC = () => {
+interface InstallFloatingButtonProps {
+    mode?: 'floating' | 'static';
+    className?: string;
+}
+
+export const InstallFloatingButton: React.FC<InstallFloatingButtonProps> = ({ mode = 'floating', className = '' }) => {
   const [installEnv, setInstallEnv] = useState<InstallEnv>('hidden');
   const [showGuide, setShowGuide] = useState(false);
   const [isInstalledSuccess, setIsInstalledSuccess] = useState(false);
@@ -87,24 +92,34 @@ export const InstallFloatingButton: React.FC = () => {
 
   return (
     <>
-        {/* 28.1 UI 组件外观与层级 */}
-        <div className="fixed top-20 right-4 z-40 pointer-events-none flex flex-col items-end gap-2">
-            {isInstalledSuccess && (
-                <div className="bg-green-500 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 animate-bounce pointer-events-auto">
-                    <Check size={16} /> 安装成功! 即将启动...
-                </div>
-            )}
+        {mode === 'floating' ? (
+            /* 28.1 UI 组件外观与层级 (Floating) */
+            <div className={`fixed top-20 right-4 z-40 pointer-events-none flex flex-col items-end gap-2 ${className}`}>
+                {isInstalledSuccess && (
+                    <div className="bg-green-500 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 animate-bounce pointer-events-auto">
+                        <Check size={16} /> 安装成功! 即将启动...
+                    </div>
+                )}
 
-            {!isInstalledSuccess && installEnv !== 'hidden' && (
-                <button 
-                    onClick={handleClick}
-                    className="pointer-events-auto bg-white dark:bg-gray-800 p-1.5 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 hover:scale-105 transition-transform w-12 h-12 flex items-center justify-center overflow-hidden"
-                    title="安装应用"
-                >
-                    <img src={APP_LOGO_URL} alt="Install" className="w-full h-full object-cover rounded-xl" />
-                </button>
-            )}
-        </div>
+                {!isInstalledSuccess && installEnv !== 'hidden' && (
+                    <button 
+                        onClick={handleClick}
+                        className="pointer-events-auto bg-white dark:bg-gray-800 p-1.5 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 hover:scale-105 transition-transform w-12 h-12 flex items-center justify-center overflow-hidden"
+                        title="安装应用"
+                    >
+                        <img src={APP_LOGO_URL} alt="Install" className="w-full h-full object-cover rounded-xl" />
+                    </button>
+                )}
+            </div>
+        ) : (
+            /* Static Button Mode for Login Page */
+            <button 
+                onClick={handleClick} 
+                className={`mt-6 text-gray-500 hover:text-blue-600 text-sm font-medium flex items-center gap-2 transition-colors px-4 py-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 ${className}`}
+            >
+                <Settings2 className="w-4 h-4" /> PWA配置
+            </button>
+        )}
 
         {/* 28.2 引导交互逻辑 (Modals) */}
         {showGuide && (

@@ -557,7 +557,7 @@ const ImportProducts = () => {
 
                   {/* Form Grid */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="col-span-2 relative">
+                      <div className="col-span-1 md:col-span-2 relative">
                           <label className="text-sm font-bold text-gray-500 mb-1 block">商品名称 <span className="text-red-500">*</span></label>
                           <input 
                             value={manualForm.name}
@@ -590,7 +590,7 @@ const ImportProducts = () => {
                           )}
                       </div>
 
-                      <div className="col-span-2">
+                      <div className="col-span-1 md:col-span-2">
                           <label className="text-sm font-bold text-gray-500 mb-1 block">批号 <span className="text-red-500">*</span></label>
                           <div className="flex gap-2">
                               <input 
@@ -602,16 +602,16 @@ const ImportProducts = () => {
                           </div>
                       </div>
 
-                      <div>
+                      <div className="col-span-1 md:col-span-1">
                           <label className="text-sm font-bold text-gray-500 mb-1 block">有效期</label>
                           <input type="date" value={manualForm.expiryDate || ''} onChange={e => setManualForm({...manualForm, expiryDate: e.target.value})} className="w-full p-3 rounded-xl border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 outline-none"/>
                       </div>
-                      <div>
+                      <div className="col-span-1 md:col-span-1">
                           <label className="text-sm font-bold text-gray-500 mb-1 block">SKU</label>
                           <input value={manualForm.sku} onChange={e => setManualForm({...manualForm, sku: e.target.value})} className="w-full p-3 rounded-xl border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 outline-none"/>
                       </div>
                       
-                      <div className="col-span-2 p-4 bg-blue-50 dark:bg-blue-900/10 rounded-xl border border-blue-100 dark:border-blue-900">
+                      <div className="col-span-1 md:col-span-2 p-4 bg-blue-50 dark:bg-blue-900/10 rounded-xl border border-blue-100 dark:border-blue-900">
                           <h4 className="text-xs font-bold text-blue-600 mb-3">库存数量 & 单位</h4>
                           <div className="grid grid-cols-2 gap-4">
                               <div>
@@ -637,11 +637,11 @@ const ImportProducts = () => {
                           </div>
                       </div>
 
-                      <div>
+                      <div className="col-span-1 md:col-span-1">
                           <label className="text-sm font-bold text-gray-500 mb-1 block">分类</label>
                           <input value={manualForm.category} onChange={e => setManualForm({...manualForm, category: e.target.value})} className="w-full p-3 rounded-xl border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 outline-none"/>
                       </div>
-                      <div>
+                      <div className="col-span-1 md:col-span-1">
                           <label className="text-sm font-bold text-gray-500 mb-1 block">备注</label>
                           <input value={manualForm.notes} onChange={e => setManualForm({...manualForm, notes: e.target.value})} className="w-full p-3 rounded-xl border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 outline-none"/>
                       </div>

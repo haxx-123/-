@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Trash2, Edit3, Send, AlertCircle, Bold, Italic, Underline, Image as ImageIcon, Link, AlignLeft, AlignCenter, AlignRight, Users, Filter, ArrowLeft, MoreHorizontal, Eye, CheckCircle, ChevronLeft, ChevronRight, Save, Plus, Clock, Video, CheckSquare, Square, Loader2, MessageSquare } from 'lucide-react';
+import { X, Trash2, Edit3, Send, AlertCircle, Bold, Italic, Underline, Image as ImageIcon, Link, AlignLeft, AlignCenter, AlignRight, Users, Filter, ArrowLeft, MoreHorizontal, Eye, CheckCircle, ChevronLeft, ChevronRight, Save, Plus, Clock, Video, CheckSquare, Square, Loader2, MessageSquare, UserCheck } from 'lucide-react';
 import { Announcement, RoleLevel, AnnouncementFrequency, LogAction } from '../types';
 import { useApp } from '../App';
 import UsernameBadge from './UsernameBadge';
@@ -48,7 +48,13 @@ const AnnouncementCenter: React.FC<AnnouncementCenterProps> = ({ onClose, initia
   const [selectedAnnouncement, setSelectedAnnouncement] = useState<Announcement | null>(null);
   
   // Forms & Loading
-  const [publishForm, setPublishForm] = useState({ title: '', content: '', targets: [] as string[], popupEnabled: false, popupFrequency: 'once' as AnnouncementFrequency, allowHide: true, autoRevokeEnabled: false, autoRevokeDuration: '1', autoRevokeUnit: 'months' });
+  const [publishForm, setPublishForm] = useState({ 
+      title: '', content: '', 
+      targetMode: 'all' as 'all' | 'specific', // 22.4.2 Switch
+      targets: [] as string[], 
+      popupEnabled: false, popupFrequency: 'once' as AnnouncementFrequency, 
+      allowHide: true, autoRevokeEnabled: false, autoRevokeDuration: '1', autoRevokeUnit: 'months' 
+  });
   const [suggestionText, setSuggestionText] = useState('');
   const contentEditableRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(false);
@@ -82,6 +88,7 @@ const AnnouncementCenter: React.FC<AnnouncementCenterProps> = ({ onClose, initia
   const handlePublish = async (isEdit: boolean = false) => {
     if (user?.role === RoleLevel.GUEST) return alert('权限不足');
     if (!publishForm.title || !publishForm.content) return alert('标题和内容不能为空');
+    if (publishForm.targetMode === 'specific' && publishForm.targets.length === 0) return alert('请至少选择一个接收对象');
 
     setLoading(true); // 6.2 Lock
     let revokeAt = null;
@@ -95,7 +102,7 @@ const AnnouncementCenter: React.FC<AnnouncementCenterProps> = ({ onClose, initia
         const payload = {
             title: publishForm.title, 
             content: publishForm.content, 
-            target_user_ids: publishForm.targets,
+            target_user_ids: publishForm.targetMode === 'all' ? [] : publishForm.targets, // Empty array means ALL per spec logic
             popup_config: publishForm.popupEnabled ? { enabled: true, frequency: publishForm.popupFrequency } : null,
             allow_hide: publishForm.allowHide, // 22.4.3
             auto_revoke_config: publishForm.autoRevokeEnabled ? { enabled: true, revoke_at: revokeAt } : null
@@ -120,7 +127,7 @@ const AnnouncementCenter: React.FC<AnnouncementCenterProps> = ({ onClose, initia
         }
         await reloadData(); 
         // Reset
-        setPublishForm({ title: '', content: '', targets: [], popupEnabled: false, popupFrequency: 'once', allowHide: true, autoRevokeEnabled: false, autoRevokeDuration: '1', autoRevokeUnit: 'months' });
+        setPublishForm({ title: '', content: '', targetMode: 'all', targets: [], popupEnabled: false, popupFrequency: 'once', allowHide: true, autoRevokeEnabled: false, autoRevokeDuration: '1', autoRevokeUnit: 'months' });
         if(contentEditableRef.current) contentEditableRef.current.innerHTML = '';
         setView('list'); 
         setActiveTab('my');
@@ -191,10 +198,22 @@ const AnnouncementCenter: React.FC<AnnouncementCenterProps> = ({ onClose, initia
           return announcements.filter(ann => {
               if (ann.hidden_by_users?.includes(user?.id || '')) return false;
               if (ann.type === 'suggestion') return false; // Don't show suggestions in general feed
-              // Author sees own, others check target
+              
+              // Author sees own
               if (ann.author_id === user?.id) return true;
-              // Check targeting
-              if ((!ann.target_userIds || ann.target_userIds.length === 0 || ann.target_userIds.includes(user?.id || ''))) return true;
+
+              // Visibility Logic (22.4.2 & General):
+              // 1. If target_userIds is empty -> ALL visible
+              // 2. If target_userIds is set -> Only people in list OR higher permission people see it.
+              
+              const isTargetExplicit = (!ann.target_userIds || ann.target_userIds.length === 0 || ann.target_userIds.includes(user?.id || ''));
+              
+              // Higher permission check: '00' < '01'. So if user.role < author_role, user is higher rank.
+              // Note: RoleLevel is string enum. Comparison works if standard '00' < '09'.
+              const isHigherRank = user?.role && ann.author_role && (user.role < ann.author_role);
+
+              if (isTargetExplicit || isHigherRank) return true;
+              
               return false;
           });
       }
@@ -236,6 +255,7 @@ const AnnouncementCenter: React.FC<AnnouncementCenterProps> = ({ onClose, initia
       setPublishForm({
           title: ann.title,
           content: ann.content,
+          targetMode: (ann.target_userIds && ann.target_userIds.length > 0) ? 'specific' : 'all',
           targets: ann.target_userIds || [],
           popupEnabled: !!ann.popup_config,
           popupFrequency: ann.popup_config?.frequency || 'once',
@@ -251,6 +271,15 @@ const AnnouncementCenter: React.FC<AnnouncementCenterProps> = ({ onClose, initia
           if(contentEditableRef.current) contentEditableRef.current.innerHTML = ann.content;
       }, 100);
   };
+
+  // Get eligible targets for specific selection (Lower permission + Self)
+  const eligibleTargets = users.filter(u => {
+      if (!user) return false;
+      // Self
+      if (u.id === user.id) return true;
+      // Lower permission (Higher number value)
+      return u.role > user.role;
+  });
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-gray-800 relative overflow-hidden">
@@ -379,6 +408,40 @@ const AnnouncementCenter: React.FC<AnnouncementCenterProps> = ({ onClose, initia
 
                         {/* Options */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                            
+                            {/* 22.4.2 Recipient Selection */}
+                            <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-100 dark:border-gray-700 md:col-span-2">
+                                <label className="flex items-center gap-2 mb-3 font-bold text-gray-700 dark:text-gray-300">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={publishForm.targetMode === 'specific'} 
+                                        onChange={e => setPublishForm({...publishForm, targetMode: e.target.checked ? 'specific' : 'all'})} 
+                                        className="w-4 h-4 text-blue-600 rounded" 
+                                    /> 
+                                    22.4.2 指定接收对象 {publishForm.targetMode === 'all' && <span className="text-gray-400 font-normal">(默认: 全员可见)</span>}
+                                </label>
+                                
+                                {publishForm.targetMode === 'specific' && (
+                                    <div className="max-h-40 overflow-y-auto bg-white dark:bg-gray-800 p-2 rounded border dark:border-gray-600 grid grid-cols-2 gap-2">
+                                        {eligibleTargets.map(u => (
+                                            <label key={u.id} className="flex items-center gap-2 p-1 hover:bg-gray-50 dark:hover:bg-gray-700 rounded cursor-pointer">
+                                                <input 
+                                                    type="checkbox" 
+                                                    checked={publishForm.targets.includes(u.id)}
+                                                    onChange={e => {
+                                                        if (e.target.checked) setPublishForm(prev => ({ ...prev, targets: [...prev.targets, u.id] }));
+                                                        else setPublishForm(prev => ({ ...prev, targets: prev.targets.filter(id => id !== u.id) }));
+                                                    }}
+                                                    className="w-3 h-3 text-blue-600 rounded"
+                                                />
+                                                <span className="text-xs truncate"><UsernameBadge name={u.username} roleLevel={u.role} /></span>
+                                            </label>
+                                        ))}
+                                        {eligibleTargets.length === 0 && <p className="col-span-2 text-xs text-gray-400 text-center">无可选低权限用户</p>}
+                                    </div>
+                                )}
+                            </div>
+
                             <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-100 dark:border-gray-700">
                                 <label className="flex items-center gap-2 mb-3 font-bold text-gray-700 dark:text-gray-300">
                                     <input type="checkbox" checked={publishForm.popupEnabled} onChange={e => setPublishForm({...publishForm, popupEnabled: e.target.checked})} className="w-4 h-4 text-blue-600 rounded" /> 
