@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Search, ChevronDown, ChevronRight, Plus, Package, FileText, Edit2, X, Save, ArrowRightLeft, Info, ScanLine, Filter, MapPin, Trash2, Image as ImageIcon, ChevronLeft, CheckSquare, Square, Box, Loader2, Calculator, AlertTriangle, Calendar, Camera } from 'lucide-react';
+import { Search, ChevronDown, ChevronRight, Plus, Package, FileText, Edit2, X, Save, ArrowRightLeft, Info, ScanLine, Filter, MapPin, Trash2, Image as ImageIcon, ChevronLeft, CheckSquare, Square, Box, Loader2, Calculator, AlertTriangle, Calendar, Camera, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Product, Batch, RoleLevel, LogAction } from '../types';
 import { useApp } from '../App';
@@ -73,6 +74,54 @@ const ImageLightbox = ({ src, onClose }: { src: string, onClose: () => void }) =
 
 // --- Modals ---
 
+const QuickOutModal = ({ batch, product, onClose, onConfirm }: any) => {
+    const rate = Number(batch.conversionRate) || 10;
+    const safeRate = rate === 0 ? 10 : rate;
+    const [loading, setLoading] = useState(false);
+
+    const handleQuickOut = async (type: 'big' | 'small') => {
+        setLoading(true);
+        const deduction = type === 'big' ? safeRate : 1;
+        
+        // Safety check
+        if ((Number(batch.totalQuantity) || 0) < deduction) {
+            setLoading(false);
+            alert("库存不足，无法执行快速出库");
+            return;
+        }
+
+        // Trigger parent callback with delta
+        await onConfirm(deduction, { big: type === 'big' ? 1 : 0, small: type === 'small' ? 1 : 0 });
+        setLoading(false);
+        onClose();
+    };
+
+    return (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm">
+            <div className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl animate-fade-in relative">
+                <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><X className="w-5 h-5"/></button>
+                <div className="text-center mb-6">
+                    <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-2"><Zap className="w-6 h-6 text-yellow-600 fill-current"/></div>
+                    <h3 className="font-bold text-lg">快速出库</h3>
+                    <p className="text-sm text-gray-500">{product.name}</p>
+                    <p className="text-xs text-gray-400 mt-1">批号: {batch.batchNumber}</p>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                    <LoadingButton loading={loading} onClick={() => handleQuickOut('big')} className="flex flex-col p-4 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-colors text-red-700 h-32 items-center justify-center gap-2">
+                        <span className="text-3xl font-bold">-1</span>
+                        <span className="font-bold text-sm">{product.unitBig} (整)</span>
+                    </LoadingButton>
+                    <LoadingButton loading={loading} onClick={() => handleQuickOut('small')} className="flex flex-col p-4 bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded-xl transition-colors text-orange-700 h-32 items-center justify-center gap-2">
+                         <span className="text-3xl font-bold">-1</span>
+                         <span className="font-bold text-sm">{product.unitSmall} (散)</span>
+                    </LoadingButton>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const AddBatchModal = ({ product, onClose, onConfirm }: any) => {
     const [form, setForm] = useState({
         batchNumber: '',
@@ -82,6 +131,8 @@ const AddBatchModal = ({ product, onClose, onConfirm }: any) => {
         conversionRate: product.conversionRate || 10
     });
     const [loading, setLoading] = useState(false);
+    const [showScanner, setShowScanner] = useState(false);
+    const batchInputRef = useRef<HTMLInputElement>(null);
 
     const handleSubmit = async () => {
         if (loading) return;
@@ -102,8 +153,30 @@ const AddBatchModal = ({ product, onClose, onConfirm }: any) => {
         setLoading(false);
     };
 
+    // Scenario B: Context-Aware Scan
+    const handleScan = (code: string) => {
+        setShowScanner(false);
+        // If the scanned code matches the Product SKU, it means user scanned the product to verify identity.
+        if (code === product.sku) {
+            // Good match, focus batch number input
+            setTimeout(() => batchInputRef.current?.focus(), 100);
+        } else {
+            // Mismatch or just a random code. Assuming it's the batch number if scanning onto a batch field?
+            // User requirement: "Check if scanned SKU matches... If mismatch show warning"
+            // If the user scans a Batch Barcode (e.g. GS1-128), it won't match SKU.
+            // But specifically for the requirement:
+            if (code !== product.sku) {
+                if(!window.confirm(`警告: 扫描的条码 (${code}) 与当前商品 SKU (${product.sku}) 不匹配。\n\n是否仍将其填入“批号”栏？`)) {
+                    return;
+                }
+            }
+            setForm(prev => ({ ...prev, batchNumber: code }));
+        }
+    };
+
     return (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm">
+            {showScanner && <BarcodeScanner onScan={handleScan} onClose={() => setShowScanner(false)} />}
             <div className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl animate-fade-in">
                 <div className="flex justify-between items-center mb-4">
                     <h3 className="font-bold text-lg flex items-center gap-2"><Plus className="w-5 h-5 text-blue-500"/> 新增批号</h3>
@@ -112,7 +185,10 @@ const AddBatchModal = ({ product, onClose, onConfirm }: any) => {
                 <div className="space-y-4 text-sm">
                     <div>
                         <label className="block text-xs font-bold mb-1" style={{color: 'var(--text-secondary)'}}>批号 <span className="text-red-500">*</span></label>
-                        <input className="w-full p-2 border rounded font-mono" value={form.batchNumber} onChange={e => setForm({...form, batchNumber: e.target.value})} />
+                        <div className="flex gap-2">
+                            <input ref={batchInputRef} className="w-full p-2 border rounded font-mono" value={form.batchNumber} onChange={e => setForm({...form, batchNumber: e.target.value})} placeholder="扫描或输入" />
+                            <button onClick={() => setShowScanner(true)} className="p-2 bg-gray-100 rounded hover:bg-gray-200"><ScanLine className="w-4 h-4 text-gray-600"/></button>
+                        </div>
                     </div>
                     <div>
                         <label className="block text-xs mb-1" style={{color: 'var(--text-secondary)'}}>有效期 (选填)</label>
@@ -178,7 +254,7 @@ const BillingModal = ({ batch, product, onClose, onConfirm }: any) => {
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm">
       <div className="bg-white dark:bg-gray-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl animate-fade-in">
         <div className="flex justify-between items-center mb-4">
-            <h3 className="font-bold text-lg">快速开单</h3>
+            <h3 className="font-bold text-lg">常规开单</h3>
             <button onClick={onClose}><X className="w-5 h-5 text-gray-400"/></button>
         </div>
         <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl mb-4 text-sm">
@@ -362,7 +438,9 @@ const Inventory = () => {
   const [productEditModal, setProductEditModal] = useState<any>({ open: false });
   const [stocktakingModal, setStocktakingModal] = useState<any>({ open: false });
   const [addBatchModal, setAddBatchModal] = useState<any>({ open: false });
+  const [quickOutModal, setQuickOutModal] = useState<any>({ open: false });
   const [showScanner, setShowScanner] = useState(false);
+  const [showQuickOutScanner, setShowQuickOutScanner] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [isDeleteMode, setIsDeleteMode] = useState(false);
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
@@ -434,20 +512,78 @@ const Inventory = () => {
     return () => setPageActions({});
   }, [filteredProducts, setPageActions, currentStore]);
 
+  const handleQuickOutScan = (code: string) => {
+      setShowQuickOutScanner(false);
+      
+      // Find Product by SKU
+      let product = products.find(p => p.sku === code && p.storeId === currentStore.id);
+      let batch: Batch | undefined;
+
+      // If not found by SKU, try Batch Number
+      if (!product) {
+          for (const p of products) {
+              if (p.storeId !== currentStore.id) continue;
+              const foundBatch = p.batches.find(b => b.batchNumber === code);
+              if (foundBatch) {
+                  product = p;
+                  batch = foundBatch;
+                  break;
+              }
+          }
+      }
+
+      if (product) {
+          // Determine batch if not specific
+          if (!batch) {
+              // FIFO: Find batch with positive stock and earliest expiry
+              const availableBatches = product.batches.filter(b => b.totalQuantity > 0);
+              if (availableBatches.length > 0) {
+                  const sorted = [...availableBatches].sort((a, b) => {
+                      if (a.expiryDate && b.expiryDate) return new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime();
+                      if (a.expiryDate) return -1; 
+                      if (b.expiryDate) return 1;
+                      return 0; 
+                  });
+                  batch = sorted[0];
+              }
+          }
+
+          if (batch) {
+              setQuickOutModal({ open: true, batch, product });
+          } else {
+              alert(`商品 "${product.name}" 当前无可用库存批次`);
+          }
+      } else {
+          alert(`未找到匹配的商品或批号: ${code}`);
+      }
+  };
+
+  const handleQuickOutConfirm = async (deltaTotal: number, detail: { big: number, small: number }) => {
+     const { batch, product } = quickOutModal;
+     await handleBillingLogic('out', deltaTotal, detail, batch, product, true);
+  };
+
   const handleBillingConfirm = async (type: 'in' | 'out', deltaTotal: number, detail: { big: number, small: number }) => {
       const { batch, product } = billingModal;
+      await handleBillingLogic(type, deltaTotal, detail, batch, product, false);
+  };
+
+  const handleBillingLogic = async (type: 'in' | 'out', deltaTotal: number, detail: { big: number, small: number }, batch: any, product: any, isQuick: boolean) => {
       if (!batch || !product) return;
       const currentTotal = Number(batch.totalQuantity) || 0;
       const newTotal = type === 'in' ? currentTotal + deltaTotal : currentTotal - deltaTotal;
+      
       setProducts(prev => prev.map(p => {
           if (p.id !== product.id) return p;
           return { ...p, batches: p.batches.map(b => b.id === batch.id ? { ...b, totalQuantity: newTotal } : b) };
       }));
-      setBillingModal({ open: false });
+      if(isQuick) setQuickOutModal({ open: false });
+      else setBillingModal({ open: false });
+      
       try {
           const { error } = await supabase.from('batches').update({ total_quantity: newTotal }).eq('id', batch.id);
           if (error) throw error;
-          const logDesc = `[${type === 'in' ? '入库' : '出库'}]: ${product.name} × ${detail.big}${product.unitBig}${detail.small}${product.unitSmall}`;
+          const logDesc = `[${type === 'in' ? '入库' : (isQuick ? '快速出库' : '出库')}]: ${product.name} × ${detail.big}${product.unitBig}${detail.small}${product.unitSmall}`;
           await supabase.from('operation_logs').insert({
               id: `log_${Date.now()}`, action_type: type === 'in' ? LogAction.ENTRY_INBOUND : LogAction.ENTRY_OUTBOUND,
               target_id: batch.id, target_name: product.name, change_desc: logDesc, change_delta: deltaTotal,
@@ -496,10 +632,12 @@ const Inventory = () => {
   return (
     <div className="space-y-6 animate-fade-in-up pb-20">
       {billingModal.open && <BillingModal {...billingModal} onClose={() => setBillingModal({ open: false })} onConfirm={handleBillingConfirm} />}
+      {quickOutModal.open && <QuickOutModal {...quickOutModal} onClose={() => setQuickOutModal({ open: false })} onConfirm={handleQuickOutConfirm} />}
       {productEditModal.open && <ProductEditModal {...productEditModal} onClose={() => setProductEditModal({ open: false })} onSave={handleProductEditSave} />}
       {stocktakingModal.open && <StocktakingModal {...stocktakingModal} onClose={() => setStocktakingModal({ open: false })} onSave={handleStocktakingSave} />}
       {addBatchModal.open && <AddBatchModal {...addBatchModal} onClose={() => setAddBatchModal({ open: false })} onConfirm={handleAddBatch} />}
       {showScanner && <BarcodeScanner onScan={(val) => { setSearchTerm(val); setShowScanner(false); }} onClose={() => setShowScanner(false)} />}
+      {showQuickOutScanner && <BarcodeScanner onScan={handleQuickOutScan} onClose={() => setShowQuickOutScanner(false)} />}
       {lightboxSrc && <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
 
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
@@ -527,7 +665,12 @@ const Inventory = () => {
                 <button onClick={() => setShowScanner(true)} className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 bg-gray-100 dark:bg-gray-700 rounded hover:text-blue-500"><ScanLine className="w-4 h-4"/></button>
              </div>
              {!isParentView && (
-                <button onClick={() => navigate('/import')} className="px-4 py-2 bg-blue-600 text-white rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/20"><Plus className="w-4 h-4"/> 导入新商品</button>
+                <>
+                    <button onClick={() => setShowQuickOutScanner(true)} className="px-4 py-2 bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 rounded-xl font-bold flex items-center gap-2 hover:bg-yellow-200 transition-colors shadow-lg shadow-yellow-600/20 whitespace-nowrap">
+                        <Zap className="w-4 h-4"/> 扫码出库
+                    </button>
+                    <button onClick={() => navigate('/import')} className="px-4 py-2 bg-blue-600 text-white rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/20 whitespace-nowrap"><Plus className="w-4 h-4"/> 导入新商品</button>
+                </>
              )}
         </div>
       </div>
@@ -619,9 +762,6 @@ const Inventory = () => {
                                                                 const bBig = Math.floor(bTotal / effectiveBRate);
                                                                 const bSmall = bTotal % effectiveBRate;
                                                                 
-                                                                // 36.5.1 Sub-row Color Coding Logic
-                                                                // Batch No: var(--accent-color) (Theme Color) Highlighting
-                                                                // Expiry: Red if expired, var(--text-secondary) if not, Yellow label if null
                                                                 return (
                                                                     <tr key={batch.id} className="hover:bg-white dark:hover:bg-gray-800 transition-colors">
                                                                         {isParentView && (

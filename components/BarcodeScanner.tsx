@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 import { X, Zap, ZapOff } from 'lucide-react';
 
@@ -28,7 +29,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose }) => {
             const html5QrCode = new window.Html5Qrcode("reader");
             scannerRef.current = html5QrCode;
 
-            // Added formats support for 1D barcodes
+            // Added formats support for 1D barcodes and QR
             const config = { 
                 fps: 15, 
                 qrbox: { width: 250, height: 250 }, 
@@ -81,7 +82,8 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose }) => {
                 if (scannerRef.current.isScanning) {
                     scannerRef.current.stop().catch((err: any) => console.warn(err));
                 }
-                scannerRef.current.clear().catch((err: any) => console.warn(err));
+                // Fix: Wrap clear in try-catch to prevent white screen crash if element is gone
+                scannerRef.current.clear().catch((err: any) => console.warn("Scanner clear error (ignored):", err));
             } catch (e) {
                 console.warn("Scanner cleanup failed", e);
             }
@@ -90,7 +92,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose }) => {
   }, [onScan]);
 
   return (
-    <div className="fixed inset-0 z-[80] bg-black flex flex-col justify-center items-center">
+    <div className="fixed inset-0 z-[200] bg-black flex flex-col justify-center items-center">
       <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-10 bg-gradient-to-b from-black/60 to-transparent">
         <button onClick={onClose} className="p-2 bg-black/30 rounded-full text-white backdrop-blur-md">
           <X className="w-6 h-6" />

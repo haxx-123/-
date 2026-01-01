@@ -232,6 +232,7 @@ const ImportProducts = () => {
   const [showCamera, setShowCamera] = useState(false);
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false); // 6.2 Lock
+  const batchInputRef = useRef<HTMLInputElement>(null);
   
   // Image handling
   const [previewImage, setPreviewImage] = useState<string | null>(null); // For display
@@ -429,6 +430,39 @@ const ImportProducts = () => {
       }
   };
 
+  // Scenario A: Scan Handling
+  const handleManualScan = async (code: string) => {
+    setShowBarcodeScanner(false);
+    
+    // 1. Search DB for SKU
+    const { data: existingProduct } = await supabase.from('products')
+        .select('*')
+        .eq('sku', code)
+        .eq('store_id', currentStore.id)
+        .single();
+    
+    if (existingProduct) {
+        // Found: Auto-fill fields
+        setManualForm(prev => ({
+            ...prev,
+            sku: code,
+            name: existingProduct.name,
+            category: existingProduct.category,
+            unitBig: existingProduct.unit_big || '整',
+            unitSmall: existingProduct.unit_small || '散',
+            conversionRate: existingProduct.conversion_rate || 10,
+            image_url: existingProduct.image_url
+        }));
+        setPreviewImage(existingProduct.image_url || null);
+        // Focus Batch Number Input
+        setTimeout(() => batchInputRef.current?.focus(), 100);
+    } else {
+        // Not Found: Fill SKU only
+        setManualForm(prev => ({ ...prev, sku: code }));
+        alert(`未找到SKU: ${code} 的商品，请手动补全信息`);
+    }
+  };
+
   // --- Excel Import Handlers ---
   const handleExcelFile = (file: File) => {
       if (file) {
@@ -514,7 +548,7 @@ const ImportProducts = () => {
     <div className="space-y-6 animate-fade-in-up pb-20">
       {/* Modals */}
       {showCamera && <CameraModal onCapture={handleCameraCapture} onClose={() => setShowCamera(false)} />}
-      {showBarcodeScanner && <BarcodeScanner onScan={(code) => { setManualForm({...manualForm, batchNumber: code}); setShowBarcodeScanner(false); }} onClose={() => setShowBarcodeScanner(false)} />}
+      {showBarcodeScanner && <BarcodeScanner onScan={handleManualScan} onClose={() => setShowBarcodeScanner(false)} />}
       {conflictData && <ConsistencyModal conflict={conflictData} onClose={() => { setConflictData(null); setPendingTask(null); }} onResolve={(act) => { setConflictData(null); if (pendingTask) handleManualSubmit(act); }} />}
       {showExcelConfig && excelFile && <ExcelConfigurator file={excelFile} data={excelData} onClose={() => setShowExcelConfig(false)} onConfirm={processExcelImport} />}
 
@@ -568,47 +602,53 @@ const ImportProducts = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="col-span-1 md:col-span-2 relative">
                           <label className="text-sm font-bold text-gray-500 mb-1 block">商品名称 <span className="text-red-500">*</span></label>
-                          <input 
-                            value={manualForm.name}
-                            onChange={e => {
-                                const val = e.target.value;
-                                setManualForm({...manualForm, name: val});
-                                // 17.5.2.2 Typeahead Logic
-                                if (val) {
-                                    const matches = products.filter(p => p.storeId === currentStore.id && p.name.includes(val));
-                                    setManualSuggestions(matches);
-                                } else setManualSuggestions([]);
-                            }}
-                            onBlur={() => setTimeout(() => setManualSuggestions([]), 200)}
-                            className="w-full p-3 rounded-xl border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="输入商品名称..."
-                          />
-                          {/* Suggestions Dropdown */}
-                          {manualSuggestions.length > 0 && (
-                              <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 shadow-xl border dark:border-gray-600 rounded-xl mt-1 z-20 max-h-40 overflow-y-auto">
-                                  {manualSuggestions.map(p => (
-                                      <div key={p.id} 
-                                           onClick={() => setManualForm(prev => ({...prev, name: p.name, unitBig: p.unitBig, unitSmall: p.unitSmall, conversionRate: p.conversionRate, category: p.category, sku: p.sku}))}
-                                           className="p-3 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer border-b dark:border-gray-700 last:border-0"
-                                      >
-                                          <div className="font-bold text-sm">{p.name}</div>
-                                          <div className="text-xs text-gray-400">SKU: {p.sku} | {p.unitBig}/{p.unitSmall}</div>
-                                      </div>
-                                  ))}
-                              </div>
-                          )}
+                          <div className="flex gap-2">
+                            <div className="flex-1 relative">
+                                <input 
+                                    value={manualForm.name}
+                                    onChange={e => {
+                                        const val = e.target.value;
+                                        setManualForm({...manualForm, name: val});
+                                        // 17.5.2.2 Typeahead Logic
+                                        if (val) {
+                                            const matches = products.filter(p => p.storeId === currentStore.id && p.name.includes(val));
+                                            setManualSuggestions(matches);
+                                        } else setManualSuggestions([]);
+                                    }}
+                                    onBlur={() => setTimeout(() => setManualSuggestions([]), 200)}
+                                    className="w-full p-3 rounded-xl border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 outline-none focus:ring-2 focus:ring-blue-500"
+                                    placeholder="输入商品名称..."
+                                />
+                                {/* Suggestions Dropdown */}
+                                {manualSuggestions.length > 0 && (
+                                    <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 shadow-xl border dark:border-gray-600 rounded-xl mt-1 z-20 max-h-40 overflow-y-auto">
+                                        {manualSuggestions.map(p => (
+                                            <div key={p.id} 
+                                                onClick={() => setManualForm(prev => ({...prev, name: p.name, unitBig: p.unitBig, unitSmall: p.unitSmall, conversionRate: p.conversionRate, category: p.category, sku: p.sku, image_url: p.image_url}))}
+                                                className="p-3 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer border-b dark:border-gray-700 last:border-0"
+                                            >
+                                                <div className="font-bold text-sm">{p.name}</div>
+                                                <div className="text-xs text-gray-400">SKU: {p.sku} | {p.unitBig}/{p.unitSmall}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                            <button onClick={() => setShowBarcodeScanner(true)} className="p-3 bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 rounded-xl hover:bg-blue-200 transition-colors" title="扫描商品条码">
+                                <ScanLine className="w-5 h-5"/>
+                            </button>
+                          </div>
                       </div>
 
                       <div className="col-span-1 md:col-span-2">
                           <label className="text-sm font-bold text-gray-500 mb-1 block">批号 <span className="text-red-500">*</span></label>
-                          <div className="flex gap-2">
-                              <input 
-                                value={manualForm.batchNumber}
-                                onChange={e => setManualForm({...manualForm, batchNumber: e.target.value})}
-                                className="flex-1 p-3 rounded-xl border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 outline-none font-mono"
-                              />
-                              <button onClick={() => setShowBarcodeScanner(true)} className="p-3 bg-gray-100 dark:bg-gray-700 rounded-xl hover:bg-blue-50"><ScanLine/></button>
-                          </div>
+                          <input 
+                            ref={batchInputRef}
+                            value={manualForm.batchNumber}
+                            onChange={e => setManualForm({...manualForm, batchNumber: e.target.value})}
+                            className="w-full p-3 rounded-xl border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 outline-none font-mono"
+                            placeholder="请扫描或输入批号"
+                          />
                       </div>
 
                       <div className="col-span-1 md:col-span-1">
