@@ -1,8 +1,10 @@
 
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../App';
-import { AlertTriangle, Clock, Settings, X, TrendingUp, BarChart2, Calendar } from 'lucide-react';
+import { AlertTriangle, Clock, Settings, X, TrendingUp, BarChart2, Calendar, Copy, FileSpreadsheet, Crop } from 'lucide-react';
 import { LogAction } from '../types';
+import html2canvas from 'html2canvas';
+import * as XLSX from 'xlsx';
 
 // --- Helper Components for Charts (SVG) ---
 
@@ -121,30 +123,73 @@ const SimpleLineChart = ({ data }: { data: { day: string; in: number; out: numbe
 
 // --- Modals ---
 
-const AlertListModal = ({ title, items, onClose }: { title: string; items: any[]; onClose: () => void }) => (
-  <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm animate-fade-in">
-    <div className="bg-white dark:bg-gray-800 w-full max-w-md rounded-2xl shadow-2xl p-6 relative">
-       <button onClick={onClose} className="absolute top-4 right-4 text-gray-500 hover:text-gray-700"><X className="w-5 h-5"/></button>
-       <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-         {title.includes('过期') ? <Clock className="text-yellow-600"/> : <AlertTriangle className="text-red-600"/>}
-         {title}
-       </h3>
-       <div className="space-y-3 max-h-[60vh] overflow-y-auto">
-          {items.length === 0 ? <p className="text-gray-400 text-center py-4">无相关数据</p> : 
-            items.map((item, i) => (
-              <div key={i} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700 rounded-xl border border-gray-100 dark:border-gray-600">
-                 <div>
-                    <div className="font-bold">{item.name}</div>
-                    <div className="text-xs text-gray-500">{item.detail}</div>
-                 </div>
-                 <div className="font-mono font-bold text-lg">{item.value}</div>
-              </div>
-            ))
+const AlertListModal = ({ title, items, onClose }: { title: string; items: any[]; onClose: () => void }) => {
+  const handleCopy = () => {
+      const text = items.map(i => `${i.name} | ${i.detail} | ${i.value}`).join('\n');
+      navigator.clipboard.writeText(text).then(() => alert('清单内容已复制'));
+  };
+
+  const handleExcel = () => {
+      const ws = XLSX.utils.json_to_sheet(items.map(i => ({ '商品名称': i.name, '详情': i.detail, '状态': i.value })));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Alerts");
+      XLSX.writeFile(wb, `alert_list_${Date.now()}.xlsx`);
+  };
+
+  const handleScreenshot = async () => {
+      const el = document.getElementById('alert-modal-content');
+      if (el) {
+          const originalStyle = el.style.transform;
+          el.style.transform = 'none'; // Fix potential transform issues with html2canvas
+          try {
+              const canvas = await html2canvas(el, { useCORS: true, backgroundColor: null });
+              const link = document.createElement('a');
+              link.download = `alert_screenshot_${Date.now()}.png`;
+              link.href = canvas.toDataURL();
+              link.click();
+          } catch(e) {
+              console.error(e);
+              alert("截图生成失败");
+          } finally {
+              el.style.transform = originalStyle;
           }
-       </div>
+      }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm animate-fade-in p-4">
+        <div id="alert-modal-content" className="bg-white dark:bg-gray-800 w-full max-w-md rounded-2xl shadow-2xl p-6 relative flex flex-col max-h-[80vh]">
+            <div className="flex justify-between items-center mb-4 shrink-0 gap-2">
+                <h3 className="text-xl font-bold flex items-center gap-2 truncate text-gray-800 dark:text-white">
+                    {title.includes('过期') ? <Clock className="text-yellow-600 shrink-0"/> : <AlertTriangle className="text-red-600 shrink-0"/>}
+                    <span className="truncate">{title}</span>
+                </h3>
+                <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={handleCopy} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-500" title="复制文本"><Copy className="w-4 h-4"/></button>
+                    <button onClick={handleExcel} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-500" title="导出 Excel"><FileSpreadsheet className="w-4 h-4"/></button>
+                    <button onClick={handleScreenshot} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-500" title="长截图"><Crop className="w-4 h-4"/></button>
+                    <div className="w-px h-4 bg-gray-200 dark:bg-gray-700 mx-1"></div>
+                    <button onClick={onClose} className="p-2 hover:bg-red-50 text-gray-500 hover:text-red-500 rounded-lg transition-colors"><X className="w-5 h-5"/></button>
+                </div>
+            </div>
+            
+            <div className="space-y-3 overflow-y-auto p-1">
+                {items.length === 0 ? <p className="text-gray-400 text-center py-4">无相关数据</p> : 
+                    items.map((item, i) => (
+                    <div key={i} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700 rounded-xl border border-gray-100 dark:border-gray-600">
+                        <div className="min-w-0 pr-2">
+                            <div className="font-bold truncate text-gray-800 dark:text-gray-200">{item.name}</div>
+                            <div className="text-xs text-gray-500 truncate">{item.detail}</div>
+                        </div>
+                        <div className="font-mono font-bold text-lg shrink-0 text-gray-800 dark:text-gray-200">{item.value}</div>
+                    </div>
+                    ))
+                }
+            </div>
+        </div>
     </div>
-  </div>
-);
+  );
+};
 
 const Dashboard = () => {
   const { currentStore, products, logs } = useApp();

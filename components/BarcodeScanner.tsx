@@ -28,7 +28,18 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose }) => {
             const html5QrCode = new window.Html5Qrcode("reader");
             scannerRef.current = html5QrCode;
 
-            const config = { fps: 15, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 };
+            // Added formats support for 1D barcodes
+            const config = { 
+                fps: 15, 
+                qrbox: { width: 250, height: 250 }, 
+                aspectRatio: 1.0,
+                formatsToSupport: [ 
+                    window.Html5QrcodeSupportedFormats.QR_CODE,
+                    window.Html5QrcodeSupportedFormats.EAN_13,
+                    window.Html5QrcodeSupportedFormats.CODE_128,
+                    window.Html5QrcodeSupportedFormats.UPC_A
+                ]
+            };
             
             await html5QrCode.start(
                 { facingMode: "environment" }, 
@@ -42,7 +53,9 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose }) => {
                     
                     // 2. Stop immediately
                     html5QrCode.stop().then(() => {
-                        html5QrCode.clear();
+                        try {
+                             html5QrCode.clear();
+                        } catch(e) { console.warn("Clear error", e); }
                         // 3. Callback to parent
                         onScan(decodedText);
                     }).catch((err: any) => {
@@ -64,10 +77,14 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose }) => {
 
     return () => {
         if (scannerRef.current) {
-            if (scannerRef.current.isScanning) {
-                scannerRef.current.stop().catch((err: any) => console.warn(err));
+            try {
+                if (scannerRef.current.isScanning) {
+                    scannerRef.current.stop().catch((err: any) => console.warn(err));
+                }
+                scannerRef.current.clear().catch((err: any) => console.warn(err));
+            } catch (e) {
+                console.warn("Scanner cleanup failed", e);
             }
-            scannerRef.current.clear().catch((err: any) => console.warn(err));
         }
     };
   }, [onScan]);

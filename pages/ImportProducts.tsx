@@ -182,24 +182,33 @@ const ExcelConfigurator = ({ file, data, onClose, onConfirm }: { file: File, dat
 
             {/* 17.4.2 Bottom: Scrollable Preview */}
             <div className="border rounded-xl overflow-hidden dark:border-gray-700">
-                <div className="bg-gray-100 dark:bg-gray-900 p-2 text-xs font-bold text-gray-500">数据预览 (前5行)</div>
+                <div className="bg-gray-100 dark:bg-gray-900 p-2 text-xs font-bold text-gray-500">
+                    Excel 原文预览 (前5行) - <span className="font-normal">请确保上方映射配置正确</span>
+                </div>
                 <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left">
-                        <thead className="bg-gray-50 dark:bg-gray-800 text-gray-500">
+                    <table className="w-full text-sm text-left border-collapse">
+                        <thead className="bg-gray-50 dark:bg-gray-800 text-gray-500 sticky top-0">
                             <tr>
-                                {SYSTEM_FIELDS.map(f => (
-                                    <th key={f.key} className="p-2 whitespace-nowrap">
-                                        {f.label} <span className="text-blue-500 font-normal">[{mapping[f.key] || '-'}]</span>
-                                    </th>
-                                ))}
+                                {excelHeaders.map(header => {
+                                    // Find if this header is mapped to any system field
+                                    const mappedKey = Object.keys(mapping).find(key => mapping[key] === header);
+                                    const mappedLabel = mappedKey ? SYSTEM_FIELDS.find(f => f.key === mappedKey)?.label : null;
+                                    
+                                    return (
+                                        <th key={header} className="p-2 whitespace-nowrap border-b dark:border-gray-700 border-r dark:border-gray-700 last:border-r-0 min-w-[100px]">
+                                            <div className="font-bold text-gray-700 dark:text-gray-200">{header}</div>
+                                            {mappedLabel && <div className="text-xs text-blue-500 font-normal mt-0.5">→ {mappedLabel}</div>}
+                                        </th>
+                                    );
+                                })}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                             {data.slice(0, 5).map((row, i) => (
-                                <tr key={i} className="bg-white dark:bg-gray-800">
-                                    {SYSTEM_FIELDS.map(f => (
-                                        <td key={f.key} className="p-2 whitespace-nowrap text-gray-700 dark:text-gray-300">
-                                            {row[mapping[f.key]] || <span className="text-gray-300">-</span>}
+                                <tr key={i} className="bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                    {excelHeaders.map((header, idx) => (
+                                        <td key={idx} className="p-2 whitespace-nowrap text-gray-600 dark:text-gray-300 border-r dark:border-gray-700 last:border-r-0">
+                                            {row[header] !== undefined && row[header] !== null ? String(row[header]) : ''}
                                         </td>
                                     ))}
                                 </tr>
@@ -253,7 +262,7 @@ const ImportProducts = () => {
       });
       if (error) {
           console.error("Upload failed:", error);
-          return '';
+          throw error; // Explicitly throw error as requested
       }
       // 3. Get Public URL
       const { data: publicData } = supabase.storage.from('images').getPublicUrl(fileName);

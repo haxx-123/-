@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 import { Camera, CheckCircle, AlertTriangle, UserX } from 'lucide-react';
 
@@ -107,8 +106,9 @@ const FaceID: React.FC<FaceIDProps> = ({ onSuccess, onCancel, storedFaceData, mo
                   if (detection.detection.score > 0.8) {
                       stopCamera();
                       setStatus('success');
-                      // Convert Float32Array to standard array for JSON storage
-                      onSuccess(Array.from(detection.descriptor)); 
+                      // Fix: Convert Float32Array to standard array for JSON storage in Supabase
+                      const descriptorArray = Array.from(detection.descriptor) as number[];
+                      onSuccess(descriptorArray); 
                   }
               } else if (mode === 'verify') {
                   if (!storedFaceData || storedFaceData.length === 0) {
