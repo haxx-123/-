@@ -6,7 +6,7 @@ interface BarcodeScannerProps {
   onScan: (result: string) => void;
   onClose: () => void;
   continuous?: boolean; // If true, doesn't close after scan
-  embedded?: boolean;   // If true, removes fixed overlay styles for embedding in other layouts
+  embedded?: boolean;   // If true, adapts to parent container instead of full screen fixed
 }
 
 declare global {
@@ -33,7 +33,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose, contin
 
     const startScanner = async () => {
         try {
-            // 1. Initialize with Native Acceleration if supported
+            // 1. Initialize with Native Acceleration if supported (Critical for Android performance)
             // @ts-ignore
             const html5QrCode = new window.Html5Qrcode("reader", { 
                 experimentalFeatures: { useBarCodeDetectorIfSupported: true },
@@ -43,25 +43,25 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose, contin
 
             // 2. Optimized Config
             const config = { 
-                fps: 20, // Higher FPS for smoother feel
+                fps: 20, // 20-30 FPS is sweet spot
                 qrbox: { width: 280, height: 180 }, // Rectangular box for barcodes
                 aspectRatio: 1.0,
-                // 3. Strict Formats
+                // 3. Strict Formats (Reduce CPU load)
                 formatsToSupport: [ 
                     window.Html5QrcodeSupportedFormats.EAN_13,
                     window.Html5QrcodeSupportedFormats.CODE_128,
                     window.Html5QrcodeSupportedFormats.QR_CODE
                 ],
-                // 4. Video Constraints (Moved here from start() first arg to avoid "found 4 keys" error)
+                // 4. Video Constraints (720p is best balance)
                 videoConstraints: {
-                    width: { min: 640, ideal: 1280, max: 1920 },
-                    height: { min: 480, ideal: 720, max: 1080 },
-                    // @ts-ignore - focusMode is non-standard but often supported in advanced constraints
-                    focusMode: "continuous"
+                    width: { min: 640, ideal: 1280, max: 1280 },
+                    height: { min: 480, ideal: 720, max: 720 },
+                    // @ts-ignore - non-standard but widely supported
+                    focusMode: "continuous" 
                 }
             };
             
-            // 5. Camera ID or Config (Must have exactly 1 key: facingMode or deviceId)
+            // 5. Camera ID or Config
             const cameraConfig = { facingMode: "environment" };
 
             await html5QrCode.start(
@@ -69,8 +69,8 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose, contin
                 config,
                 (decodedText: string) => {
                     const now = Date.now();
-                    // Prevent duplicate scans within 2 seconds
-                    if (decodedText === lastScanned && now - lastScanTime.current < 2000) {
+                    // Prevent duplicate scans within 1.5 seconds
+                    if (decodedText === lastScanned && now - lastScanTime.current < 1500) {
                         return;
                     }
                     
@@ -81,7 +81,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose, contin
                     // A. Sound
                     const audio = new Audio('https://freetestdata.com/wp-content/uploads/2021/09/Free_Test_Data_1MB_MP3.mp3');
                     audio.volume = 0.5;
-                    audio.play().catch(() => {});
+                    audio.play().catch(() => {}); // Catch error if user interaction policy blocks it
                     
                     // B. Visual Flash
                     setShowFlash(true);
@@ -93,38 +93,35 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose, contin
                     if (!continuous) {
                         html5QrCode.stop().then(() => {
                             try { html5QrCode.clear(); } catch(e) {}
-                            onClose(); // Only close if not continuous
+                            onClose(); 
                         });
                     }
                 },
                 (errorMessage: string) => {
-                    // ignore scan error
+                    // ignore scan error to avoid log spam
                 }
             );
 
             // Check for Torch capability after start
-            try {
-                // Wait a bit for track to be active
-                setTimeout(() => {
-                    try {
-                       const videoElement = document.querySelector('#reader video') as HTMLVideoElement;
-                       if (videoElement && videoElement.srcObject) {
-                           const stream = videoElement.srcObject as MediaStream;
-                           const track = stream.getVideoTracks()[0];
-                           const capabilities = track.getCapabilities() as any;
-                           if (capabilities.torch) {
-                               setHasTorch(true);
-                           }
+            setTimeout(() => {
+                try {
+                   // Access the running track to check capabilities
+                   // Note: Internal API access pattern for html5-qrcode
+                   const videoElement = document.querySelector('#reader video') as HTMLVideoElement;
+                   if (videoElement && videoElement.srcObject) {
+                       const stream = videoElement.srcObject as MediaStream;
+                       const track = stream.getVideoTracks()[0];
+                       const capabilities = track.getCapabilities() as any;
+                       if (capabilities.torch) {
+                           setHasTorch(true);
                        }
-                    } catch (e) { console.warn("Torch detection failed", e); }
-                }, 500);
-            } catch (e) {
-                console.warn("Torch check failed", e);
-            }
+                   }
+                } catch (e) { console.warn("Torch check warning", e); }
+            }, 1000);
 
         } catch (err) {
             console.error("Scanner Error", err);
-            setError("无法启动摄像头，请确保授予权限。");
+            setError("无法启动摄像头，请确保授予权限或使用 HTTPS。");
         }
     };
 
@@ -138,13 +135,9 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose, contin
                 if (scannerRef.current.isScanning) {
                     scannerRef.current.stop().catch((err: any) => console.warn(err));
                 }
-                // Safe clear
-                const p = scannerRef.current.clear();
-                if (p && typeof p.catch === 'function') {
-                    p.catch((err: any) => console.warn("Scanner clear error:", err));
-                }
+                scannerRef.current.clear().catch((err: any) => console.warn("Scanner clear error:", err));
             } catch (e) {
-                console.warn("Scanner cleanup failed", e);
+                console.warn("Scanner cleanup warning", e);
             }
         }
     };
@@ -207,7 +200,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose, contin
                     {/* Dark Mask */}
                     <div className="absolute inset-0 bg-black/40">
                         {/* Cutout for Rectangular Barcode Scanner */}
-                        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[70%] h-[25%] bg-transparent border-2 border-green-400/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.5)] rounded-lg">
+                        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[80%] h-[20%] bg-transparent border-2 border-green-400/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.5)] rounded-lg">
                             {/* Scanning Line */}
                             <div className="absolute left-2 right-2 h-0.5 bg-red-500 top-1/2 animate-scan-laser shadow-[0_0_10px_rgba(239,68,68,0.8)]"></div>
                             {/* Corners */}
@@ -249,10 +242,12 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose, contin
         .animate-scan-laser {
             animation: scan-laser 1.5s linear infinite;
         }
+        /* Ensure video fills container without weird gaps */
         #reader video {
             object-fit: cover !important;
             width: 100% !important;
             height: 100% !important;
+            border-radius: 0 !important;
         }
       `}</style>
     </div>

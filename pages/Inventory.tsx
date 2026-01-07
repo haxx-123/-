@@ -72,108 +72,63 @@ const ImageLightbox = ({ src, onClose }: { src: string, onClose: () => void }) =
     </div>
 );
 
-// --- Modals ---
-
-// [Deleted QuickOutModal as requested by redesign]
-
 // --- New Cashier Mode (POS) ---
 interface CartItem {
-    batchId: string;
-    productId: string;
-    productName: string;
-    batchNumber: string;
-    unitBig: string;
-    unitSmall: string;
-    conversionRate: number;
+    id: string; // Product ID (not batch ID, as we sell product generically first)
+    product: Product;
     countBig: number;
     countSmall: number;
-    maxTotal: number; // For validation
     highlight: boolean; // For visual feedback
 }
 
-const CashierModal = ({ onClose, onConfirm, products, currentStore }: { onClose: () => void, onConfirm: (items: CartItem[]) => Promise<void>, products: Product[], currentStore: any }) => {
+const CashierModal = ({ onClose, onConfirm, products, currentStore, user }: { onClose: () => void, onConfirm: (items: CartItem[]) => Promise<void>, products: Product[], currentStore: any, user: any }) => {
     const [cart, setCart] = useState<CartItem[]>([]);
     const [loading, setLoading] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
+    const [toastMsg, setToastMsg] = useState('');
 
-    // Scan Handler
+    // Scan Handler - Smart Detection
     const handleScan = (code: string) => {
-        // 1. Find Product & Batch
-        let foundProduct: Product | undefined;
-        let foundBatch: Batch | undefined;
-
-        // A. Match by SKU
-        foundProduct = products.find(p => p.sku === code && p.storeId === currentStore.id);
-        if (foundProduct) {
-            // FIFO Batch (Positive Stock)
-            const validBatches = foundProduct.batches.filter(b => b.totalQuantity > 0).sort((a,b) => {
-                if (!a.expiryDate) return 1;
-                if (!b.expiryDate) return -1;
-                return new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime();
-            });
-            if (validBatches.length > 0) foundBatch = validBatches[0];
-        }
-
-        // B. Match by Batch Number (if unique enough or specific)
-        if (!foundProduct) {
-            for (const p of products) {
-                if (p.storeId !== currentStore.id) continue;
-                const b = p.batches.find(b => b.batchNumber === code);
-                if (b) {
-                    foundProduct = p;
-                    foundBatch = b;
-                    break;
-                }
-            }
-        }
+        // 1. Find Product by SKU in CURRENT store
+        const foundProduct = products.find(p => p.sku === code && p.storeId === currentStore.id);
 
         if (!foundProduct) {
-            // Sound handled by Scanner, maybe show small toast?
-            return; 
-        }
-
-        if (!foundBatch) {
-            alert(`商品 "${foundProduct.name}" 无库存可用`);
+            setToastMsg(`未找到商品: ${code}`);
+            setTimeout(() => setToastMsg(''), 2000);
             return;
         }
 
         // 2. Update Cart
         setCart(prev => {
-            const existingIdx = prev.findIndex(item => item.batchId === foundBatch!.id);
+            const existingIdx = prev.findIndex(item => item.id === foundProduct.id);
             const newCart = [...prev];
             
             // Remove highlight from others
             newCart.forEach(i => i.highlight = false);
 
             if (existingIdx >= 0) {
-                // Increment
+                // Increment (Default +1 Small Unit)
                 const item = newCart[existingIdx];
-                const currentTotal = item.countBig * item.conversionRate + item.countSmall;
-                if (currentTotal + 1 <= item.maxTotal) {
-                    item.countSmall += 1;
-                    // Auto convert if small reaches rate? optional, let's keep it simple
-                    if (item.countSmall >= item.conversionRate) {
-                        item.countBig += Math.floor(item.countSmall / item.conversionRate);
-                        item.countSmall = item.countSmall % item.conversionRate;
-                    }
-                    item.highlight = true;
-                    // Move to top
-                    newCart.splice(existingIdx, 1);
-                    newCart.unshift(item);
+                item.countSmall += 1;
+                
+                // Auto convert up if rate is set
+                const rate = item.product.conversionRate || 10;
+                if (item.countSmall >= rate) {
+                    item.countBig += 1;
+                    item.countSmall = 0;
                 }
+                
+                item.highlight = true;
+                // Move to top
+                newCart.splice(existingIdx, 1);
+                newCart.unshift(item);
             } else {
                 // Add New
                 newCart.unshift({
-                    batchId: foundBatch!.id,
-                    productId: foundProduct!.id,
-                    productName: foundProduct!.name,
-                    batchNumber: foundBatch!.batchNumber,
-                    unitBig: foundProduct!.unitBig || '整',
-                    unitSmall: foundProduct!.unitSmall || '散',
-                    conversionRate: foundBatch!.conversionRate || 10,
+                    id: foundProduct.id,
+                    product: foundProduct,
                     countBig: 0,
                     countSmall: 1, // Default 1 small unit
-                    maxTotal: foundBatch!.totalQuantity,
                     highlight: true
                 });
             }
@@ -196,16 +151,88 @@ const CashierModal = ({ onClose, onConfirm, products, currentStore }: { onClose:
         setCart(prev => prev.filter((_, i) => i !== index));
     };
 
+    const calculateTotalQuantity = (item: CartItem) => {
+        const rate = item.product.conversionRate || 10;
+        return (item.countBig * rate) + item.countSmall;
+    };
+
+    // FIFO Deduct Logic
     const handleSubmit = async () => {
         if (cart.length === 0) return;
         setLoading(true);
-        await onConfirm(cart);
-        setLoading(false);
-        onClose();
+
+        try {
+            for (const item of cart) {
+                let qtyNeeded = calculateTotalQuantity(item);
+                if (qtyNeeded <= 0) continue;
+
+                // 1. Get Batches (Fresh Fetch to ensure concurrency safety)
+                // Filter: belongs to product, has stock. Sort: Expiry ASC (Earliest first)
+                const { data: batches, error } = await supabase
+                    .from('batches')
+                    .select('*')
+                    .eq('product_id', item.id)
+                    .gt('total_quantity', 0)
+                    .order('expiry_date', { ascending: true, nullsFirst: false }); // nullsFirst false -> non-expiry items last or first? usually we want expiry items gone first.
+
+                if (error) throw error;
+                if (!batches || batches.length === 0) {
+                    throw new Error(`商品 "${item.product.name}" 无可用库存`);
+                }
+
+                // Check Total Available
+                const totalAvailable = batches.reduce((sum, b) => sum + b.total_quantity, 0);
+                if (totalAvailable < qtyNeeded) {
+                    throw new Error(`商品 "${item.product.name}" 库存不足 (需${qtyNeeded}, 仅${totalAvailable})`);
+                }
+
+                // 2. Deduct Sequentially
+                for (const batch of batches) {
+                    if (qtyNeeded <= 0) break;
+
+                    const deduct = Math.min(batch.total_quantity, qtyNeeded);
+                    const newTotal = batch.total_quantity - deduct;
+
+                    // Update DB
+                    await supabase.from('batches').update({ total_quantity: newTotal }).eq('id', batch.id);
+
+                    // Log
+                    const rate = batch.conversion_rate || 10;
+                    const logDesc = `[快速出库]: ${item.product.name} (自动批次扣减) - ${deduct}${item.product.unitSmall}`;
+                    
+                    await supabase.from('operation_logs').insert({
+                        id: `log_${Date.now()}_${Math.random()}`, 
+                        action_type: LogAction.ENTRY_OUTBOUND,
+                        target_id: batch.id, 
+                        target_name: item.product.name, 
+                        change_desc: logDesc, 
+                        change_delta: deduct,
+                        operator_id: user?.id, 
+                        operator_name: user?.username, 
+                        role_level: user?.role,
+                        snapshot_data: { type: 'stock_change', old_stock: batch.total_quantity, new_stock: newTotal, delta: deduct, operation: 'out', productId: item.id },
+                        created_at: new Date().toISOString()
+                    });
+
+                    qtyNeeded -= deduct;
+                }
+                
+                // Force sync product aggregate
+                await syncProductStock(item.id);
+            }
+
+            // Success
+            await onConfirm(cart); // Just triggers close/reload
+            
+        } catch (err: any) {
+            alert(err.message);
+        } finally {
+            setLoading(false);
+        }
     };
 
     const totalTypes = cart.length;
-    const totalCount = cart.reduce((sum, item) => sum + (item.countBig * item.conversionRate + item.countSmall), 0);
+    const totalSmallUnits = cart.reduce((sum, item) => sum + calculateTotalQuantity(item), 0);
 
     return (
         <div className="fixed inset-0 z-[100] bg-gray-100 dark:bg-gray-900 flex flex-col h-full animate-fade-in-up">
@@ -215,13 +242,19 @@ const CashierModal = ({ onClose, onConfirm, products, currentStore }: { onClose:
                 <button onClick={onClose} className="absolute top-4 right-4 bg-black/50 text-white p-2 rounded-full z-50 backdrop-blur">
                     <X className="w-6 h-6"/>
                 </button>
+                {/* Toast Overlay */}
+                {toastMsg && (
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-red-600/90 text-white px-6 py-3 rounded-xl backdrop-blur font-bold shadow-xl animate-bounce pointer-events-none z-50">
+                        {toastMsg}
+                    </div>
+                )}
             </div>
 
-            {/* Bottom: List (60% Height) */}
-            <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 rounded-t-2xl -mt-4 z-10 shadow-2xl overflow-hidden">
-                <div className="p-3 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex justify-between items-center">
+            {/* Bottom: List (60% Height - Footer) */}
+            <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 rounded-t-2xl -mt-4 z-10 shadow-2xl overflow-hidden relative">
+                <div className="p-3 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex justify-between items-center shrink-0">
                     <h3 className="font-bold flex items-center gap-2"><ShoppingCart className="w-5 h-5 text-blue-500"/> 待出库清单</h3>
-                    <span className="text-xs text-gray-500">已扫描 {totalTypes} 种商品</span>
+                    <span className="text-xs text-gray-500">已扫 {totalTypes} 种</span>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-3 space-y-3" ref={scrollRef}>
@@ -232,11 +265,11 @@ const CashierModal = ({ onClose, onConfirm, products, currentStore }: { onClose:
                         </div>
                     ) : (
                         cart.map((item, idx) => (
-                            <div key={`${item.batchId}_${idx}`} className={`flex flex-col gap-2 p-3 rounded-xl border transition-all duration-300 ${item.highlight ? 'bg-blue-50 border-blue-300 shadow-md scale-[1.02]' : 'bg-white dark:bg-gray-700 border-gray-100 dark:border-gray-600'}`}>
+                            <div key={`${item.id}_${idx}`} className={`flex flex-col gap-2 p-3 rounded-xl border transition-all duration-300 ${item.highlight ? 'bg-blue-50 border-blue-300 shadow-md scale-[1.02]' : 'bg-white dark:bg-gray-700 border-gray-100 dark:border-gray-600'}`}>
                                 <div className="flex justify-between items-start">
                                     <div className="flex-1">
-                                        <div className="font-bold text-gray-800 dark:text-gray-200">{item.productName}</div>
-                                        <div className="text-xs text-gray-400 font-mono mt-0.5">批号: {item.batchNumber}</div>
+                                        <div className="font-bold text-gray-800 dark:text-gray-200">{item.product.name}</div>
+                                        <div className="text-xs text-gray-400 font-mono mt-0.5">SKU: {item.product.sku}</div>
                                     </div>
                                     <button onClick={() => removeItem(idx)} className="text-gray-400 hover:text-red-500 p-1"><Trash2 className="w-4 h-4"/></button>
                                 </div>
@@ -250,7 +283,7 @@ const CashierModal = ({ onClose, onConfirm, products, currentStore }: { onClose:
                                             onChange={e => updateQuantity(idx, 'countBig', Math.max(0, parseInt(e.target.value) || 0))}
                                             className="w-full text-center bg-transparent font-bold outline-none text-lg"
                                         />
-                                        <span className="text-xs text-gray-500 whitespace-nowrap pr-2">{item.unitBig}(整)</span>
+                                        <span className="text-xs text-gray-500 whitespace-nowrap pr-2">{item.product.unitBig}</span>
                                     </div>
                                     <Plus className="w-4 h-4 text-gray-300"/>
                                     <div className="flex items-center gap-1 flex-1 bg-gray-50 dark:bg-gray-600 rounded-lg p-1 border dark:border-gray-500">
@@ -261,21 +294,19 @@ const CashierModal = ({ onClose, onConfirm, products, currentStore }: { onClose:
                                             onChange={e => updateQuantity(idx, 'countSmall', Math.max(0, parseInt(e.target.value) || 0))}
                                             className="w-full text-center bg-transparent font-bold outline-none text-lg"
                                         />
-                                        <span className="text-xs text-gray-500 whitespace-nowrap pr-2">{item.unitSmall}(散)</span>
+                                        <span className="text-xs text-gray-500 whitespace-nowrap pr-2">{item.product.unitSmall}</span>
                                     </div>
                                 </div>
-                                {((item.countBig * item.conversionRate + item.countSmall) > item.maxTotal) && (
-                                    <div className="text-xs text-red-500 flex items-center gap-1"><AlertTriangle className="w-3 h-3"/> 库存不足 (余 {item.maxTotal})</div>
-                                )}
                             </div>
                         ))
                     )}
                 </div>
 
-                <div className="p-4 border-t dark:border-gray-700 bg-white dark:bg-gray-800 pb-8">
+                {/* Fixed Footer */}
+                <div className="p-4 border-t dark:border-gray-700 bg-white dark:bg-gray-800 pb-8 shrink-0">
                     <div className="flex justify-between items-center mb-3">
-                        <span className="text-gray-500">合计数量</span>
-                        <span className="text-2xl font-bold text-blue-600">{totalCount} <span className="text-sm font-normal text-gray-400">件(散)</span></span>
+                        <span className="text-gray-500">合计 (小单位)</span>
+                        <span className="text-2xl font-bold text-blue-600">{totalSmallUnits}</span>
                     </div>
                     <div className="flex gap-3">
                         <button onClick={onClose} className="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-xl font-bold">取消</button>
@@ -285,7 +316,7 @@ const CashierModal = ({ onClose, onConfirm, products, currentStore }: { onClose:
                             disabled={cart.length === 0}
                             className="flex-[2] py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg"
                         >
-                            确认出库
+                            确认出库 (智能扣减)
                         </LoadingButton>
                     </div>
                 </div>
@@ -688,18 +719,11 @@ const Inventory = () => {
       await handleBillingLogic(type, deltaTotal, detail, batch, product, false);
   };
 
+  // Replaced with internal logic inside CashierModal component for batch handling
   const handleCashierConfirm = async (items: CartItem[]) => {
-      for (const item of items) {
-          const deltaTotal = item.countBig * item.conversionRate + item.countSmall;
-          // Find real batch data to ensure it exists
-          const product = products.find(p => p.id === item.productId);
-          const batch = product?.batches.find(b => b.id === item.batchId);
-          
-          if (product && batch) {
-              await handleBillingLogic('out', deltaTotal, { big: item.countBig, small: item.countSmall }, batch, product, true);
-          }
-      }
-      alert(`成功出库 ${items.length} 种商品`);
+      await reloadData();
+      alert(`出库成功: ${items.length} 种商品`);
+      setCashierModalOpen(false);
   };
 
   const handleBillingLogic = async (type: 'in' | 'out', deltaTotal: number, detail: { big: number, small: number }, batch: any, product: any, isQuick: boolean) => {
@@ -766,7 +790,7 @@ const Inventory = () => {
   return (
     <div className="space-y-6 animate-fade-in-up pb-20">
       {billingModal.open && <BillingModal {...billingModal} onClose={() => setBillingModal({ open: false })} onConfirm={handleBillingConfirm} />}
-      {cashierModalOpen && <CashierModal onClose={() => setCashierModalOpen(false)} onConfirm={handleCashierConfirm} products={products} currentStore={currentStore} />}
+      {cashierModalOpen && <CashierModal onClose={() => setCashierModalOpen(false)} onConfirm={handleCashierConfirm} products={products} currentStore={currentStore} user={user} />}
       {productEditModal.open && <ProductEditModal {...productEditModal} onClose={() => setProductEditModal({ open: false })} onSave={handleProductEditSave} />}
       {stocktakingModal.open && <StocktakingModal {...stocktakingModal} onClose={() => setStocktakingModal({ open: false })} onSave={handleStocktakingSave} />}
       {addBatchModal.open && <AddBatchModal {...addBatchModal} onClose={() => setAddBatchModal({ open: false })} onConfirm={handleAddBatch} />}
