@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Search, ChevronDown, ChevronRight, Plus, Package, FileText, Edit2, X, Save, ArrowRightLeft, Info, ScanLine, Filter, MapPin, Trash2, Image as ImageIcon, ChevronLeft, CheckSquare, Square, Box, Loader2, Calculator, AlertTriangle, Calendar, Camera, Zap, ShoppingCart, Minus, CheckCircle } from 'lucide-react';
+import { Search, ChevronDown, ChevronRight, Plus, Package, FileText, Edit2, X, Save, ArrowRightLeft, Info, ScanLine, Filter, MapPin, Trash2, Image as ImageIcon, ChevronLeft, CheckSquare, Square, Box, Loader2, Calculator, AlertTriangle, Calendar, Camera, Zap, ShoppingCart, Minus, PlusCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Product, Batch, RoleLevel, LogAction } from '../types';
 import { useApp } from '../App';
@@ -72,258 +72,188 @@ const ImageLightbox = ({ src, onClose }: { src: string, onClose: () => void }) =
     </div>
 );
 
-// --- New Cashier Mode (POS) ---
-interface CartItem {
-    id: string; // Product ID (not batch ID, as we sell product generically first)
+// --- POS Mode Component (Overlay) ---
+interface POSItem {
     product: Product;
     countBig: number;
     countSmall: number;
-    highlight: boolean; // For visual feedback
+    timestamp: number;
 }
 
-const CashierModal = ({ onClose, onConfirm, products, currentStore, user }: { onClose: () => void, onConfirm: (items: CartItem[]) => Promise<void>, products: Product[], currentStore: any, user: any }) => {
-    const [cart, setCart] = useState<CartItem[]>([]);
+const POSModeOverlay = ({ onClose, currentStore, products, onConfirm }: { onClose: () => void, currentStore: any, products: Product[], onConfirm: (items: POSItem[]) => Promise<void> }) => {
+    const [scanList, setScanList] = useState<POSItem[]>([]);
     const [loading, setLoading] = useState(false);
-    const scrollRef = useRef<HTMLDivElement>(null);
-    const [toastMsg, setToastMsg] = useState('');
+    const listRef = useRef<HTMLDivElement>(null);
 
-    // Scan Handler - Smart Detection
+    // Continuous Scan Handler
     const handleScan = (code: string) => {
-        // 1. Find Product by SKU in CURRENT store
-        const foundProduct = products.find(p => p.sku === code && p.storeId === currentStore.id);
-
-        if (!foundProduct) {
-            setToastMsg(`未找到商品: ${code}`);
-            setTimeout(() => setToastMsg(''), 2000);
-            return;
+        // 1. Find product
+        let found = products.find(p => p.sku === code && p.storeId === currentStore.id);
+        
+        // 2. Fallback: Search by Batch Number (if SKU not found)
+        if (!found) {
+            for (const p of products) {
+                if (p.storeId !== currentStore.id) continue;
+                if (p.batches.some(b => b.batchNumber === code)) {
+                    found = p;
+                    break;
+                }
+            }
         }
 
-        // 2. Update Cart
-        setCart(prev => {
-            const existingIdx = prev.findIndex(item => item.id === foundProduct.id);
-            const newCart = [...prev];
-            
-            // Remove highlight from others
-            newCart.forEach(i => i.highlight = false);
-
-            if (existingIdx >= 0) {
-                // Increment (Default +1 Small Unit)
-                const item = newCart[existingIdx];
-                item.countSmall += 1;
-                
-                // Auto convert up if rate is set
-                const rate = item.product.conversionRate || 10;
-                if (item.countSmall >= rate) {
-                    item.countBig += 1;
-                    item.countSmall = 0;
+        if (found) {
+            setScanList(prev => {
+                const existingIndex = prev.findIndex(item => item.product.id === found!.id);
+                if (existingIndex > -1) {
+                    // Increment existing (Default: add 1 small unit)
+                    const newList = [...prev];
+                    newList[existingIndex].countSmall += 1;
+                    // Move to top
+                    const item = newList.splice(existingIndex, 1)[0];
+                    item.timestamp = Date.now();
+                    return [item, ...newList];
+                } else {
+                    // Add new
+                    return [{ product: found!, countBig: 0, countSmall: 1, timestamp: Date.now() }, ...prev];
                 }
-                
-                item.highlight = true;
-                // Move to top
-                newCart.splice(existingIdx, 1);
-                newCart.unshift(item);
-            } else {
-                // Add New
-                newCart.unshift({
-                    id: foundProduct.id,
-                    product: foundProduct,
-                    countBig: 0,
-                    countSmall: 1, // Default 1 small unit
-                    highlight: true
-                });
+            });
+            // Auto scroll to top
+            if (listRef.current) listRef.current.scrollTop = 0;
+        } else {
+            // Error Feedback (Vibrate if possible)
+            if (navigator.vibrate) navigator.vibrate(200);
+            // We use a temporary simple toast or alert logic here, but keeping scan active
+            // Ideally, show a overlay notification inside the scanner area
+            const toast = document.getElementById('scan-toast');
+            if (toast) {
+                toast.innerText = `未找到商品: ${code}`;
+                toast.style.opacity = '1';
+                setTimeout(() => toast.style.opacity = '0', 2000);
             }
-            return newCart;
-        });
-
-        // Scroll to top
-        if (scrollRef.current) scrollRef.current.scrollTop = 0;
+        }
     };
 
-    const updateQuantity = (index: number, field: 'countBig' | 'countSmall', val: number) => {
-        setCart(prev => {
-            const next = [...prev];
-            next[index][field] = val;
-            return next;
+    const updateQuantity = (index: number, field: 'countBig' | 'countSmall', delta: number) => {
+        setScanList(prev => {
+            const newList = [...prev];
+            const newVal = newList[index][field] + delta;
+            if (newVal >= 0) newList[index][field] = newVal;
+            return newList;
         });
     };
 
     const removeItem = (index: number) => {
-        setCart(prev => prev.filter((_, i) => i !== index));
+        setScanList(prev => prev.filter((_, i) => i !== index));
     };
 
-    const calculateTotalQuantity = (item: CartItem) => {
-        const rate = item.product.conversionRate || 10;
-        return (item.countBig * rate) + item.countSmall;
-    };
-
-    // FIFO Deduct Logic
     const handleSubmit = async () => {
-        if (cart.length === 0) return;
+        if (scanList.length === 0) return;
         setLoading(true);
-
-        try {
-            for (const item of cart) {
-                let qtyNeeded = calculateTotalQuantity(item);
-                if (qtyNeeded <= 0) continue;
-
-                // 1. Get Batches (Fresh Fetch to ensure concurrency safety)
-                // Filter: belongs to product, has stock. Sort: Expiry ASC (Earliest first)
-                const { data: batches, error } = await supabase
-                    .from('batches')
-                    .select('*')
-                    .eq('product_id', item.id)
-                    .gt('total_quantity', 0)
-                    .order('expiry_date', { ascending: true, nullsFirst: false }); // nullsFirst false -> non-expiry items last or first? usually we want expiry items gone first.
-
-                if (error) throw error;
-                if (!batches || batches.length === 0) {
-                    throw new Error(`商品 "${item.product.name}" 无可用库存`);
-                }
-
-                // Check Total Available
-                const totalAvailable = batches.reduce((sum, b) => sum + b.total_quantity, 0);
-                if (totalAvailable < qtyNeeded) {
-                    throw new Error(`商品 "${item.product.name}" 库存不足 (需${qtyNeeded}, 仅${totalAvailable})`);
-                }
-
-                // 2. Deduct Sequentially
-                for (const batch of batches) {
-                    if (qtyNeeded <= 0) break;
-
-                    const deduct = Math.min(batch.total_quantity, qtyNeeded);
-                    const newTotal = batch.total_quantity - deduct;
-
-                    // Update DB
-                    await supabase.from('batches').update({ total_quantity: newTotal }).eq('id', batch.id);
-
-                    // Log
-                    const rate = batch.conversion_rate || 10;
-                    const logDesc = `[快速出库]: ${item.product.name} (自动批次扣减) - ${deduct}${item.product.unitSmall}`;
-                    
-                    await supabase.from('operation_logs').insert({
-                        id: `log_${Date.now()}_${Math.random()}`, 
-                        action_type: LogAction.ENTRY_OUTBOUND,
-                        target_id: batch.id, 
-                        target_name: item.product.name, 
-                        change_desc: logDesc, 
-                        change_delta: deduct,
-                        operator_id: user?.id, 
-                        operator_name: user?.username, 
-                        role_level: user?.role,
-                        snapshot_data: { type: 'stock_change', old_stock: batch.total_quantity, new_stock: newTotal, delta: deduct, operation: 'out', productId: item.id },
-                        created_at: new Date().toISOString()
-                    });
-
-                    qtyNeeded -= deduct;
-                }
-                
-                // Force sync product aggregate
-                await syncProductStock(item.id);
-            }
-
-            // Success
-            await onConfirm(cart); // Just triggers close/reload
-            
-        } catch (err: any) {
-            alert(err.message);
-        } finally {
-            setLoading(false);
-        }
+        await onConfirm(scanList);
+        setLoading(false);
     };
 
-    const totalTypes = cart.length;
-    const totalSmallUnits = cart.reduce((sum, item) => sum + calculateTotalQuantity(item), 0);
+    const totalItems = scanList.reduce((acc, item) => acc + (item.countBig * (item.product.conversionRate || 10)) + item.countSmall, 0);
 
     return (
-        <div className="fixed inset-0 z-[100] bg-gray-100 dark:bg-gray-900 flex flex-col h-full animate-fade-in-up">
-            {/* Top: Scanner (40% Height) */}
+        <div className="fixed inset-0 z-[100] bg-gray-100 dark:bg-gray-900 flex flex-col h-full animate-fade-in">
+            {/* Top 40%: Scanner */}
             <div className="h-[40%] bg-black relative shrink-0">
-                <BarcodeScanner onScan={handleScan} onClose={() => {}} continuous={true} embedded={true} />
-                <button onClick={onClose} className="absolute top-4 right-4 bg-black/50 text-white p-2 rounded-full z-50 backdrop-blur">
+                <BarcodeScanner onScan={handleScan} onClose={() => {}} mode="embedded" />
+                <button onClick={onClose} className="absolute top-4 right-4 p-2 bg-black/50 text-white rounded-full z-20 backdrop-blur-md">
                     <X className="w-6 h-6"/>
                 </button>
-                {/* Toast Overlay */}
-                {toastMsg && (
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-red-600/90 text-white px-6 py-3 rounded-xl backdrop-blur font-bold shadow-xl animate-bounce pointer-events-none z-50">
-                        {toastMsg}
+                <div id="scan-toast" className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-red-600 text-white px-4 py-2 rounded-full text-sm font-bold opacity-0 transition-opacity pointer-events-none z-20">
+                    未找到商品
+                </div>
+                <div className="absolute top-4 left-4 text-white/80 text-xs font-mono bg-black/40 px-2 py-1 rounded">
+                    POS 连续扫码模式
+                </div>
+            </div>
+
+            {/* Middle 50%: List */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-100 dark:bg-gray-900" ref={listRef}>
+                {scanList.map((item, index) => (
+                    <div key={item.timestamp} className="bg-white dark:bg-gray-800 p-3 rounded-xl shadow-sm flex flex-col gap-2 border border-gray-100 dark:border-gray-700 animate-slide-down">
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <h4 className="font-bold text-gray-800 dark:text-gray-100">{item.product.name}</h4>
+                                <p className="text-xs text-gray-400 font-mono">{item.product.sku}</p>
+                            </div>
+                            <button onClick={() => removeItem(index)} className="p-2 text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4"/></button>
+                        </div>
+                        
+                        <div className="flex items-center gap-4 bg-gray-50 dark:bg-gray-700/30 p-2 rounded-lg">
+                            {/* Big Unit */}
+                            <div className="flex-1 flex items-center justify-between border-r dark:border-gray-600 pr-2">
+                                <span className="text-xs text-gray-500">{item.product.unitBig || '整'}</span>
+                                <div className="flex items-center gap-2">
+                                    <button onClick={() => updateQuantity(index, 'countBig', -1)} className="p-1 bg-white dark:bg-gray-600 rounded shadow-sm"><Minus className="w-3 h-3"/></button>
+                                    <input 
+                                        type="number" 
+                                        value={item.countBig} 
+                                        onChange={(e) => {
+                                            const val = parseInt(e.target.value) || 0;
+                                            const newList = [...scanList];
+                                            newList[index].countBig = Math.max(0, val);
+                                            setScanList(newList);
+                                        }}
+                                        className="w-10 text-center bg-transparent font-bold outline-none" 
+                                    />
+                                    <button onClick={() => updateQuantity(index, 'countBig', 1)} className="p-1 bg-white dark:bg-gray-600 rounded shadow-sm"><Plus className="w-3 h-3"/></button>
+                                </div>
+                            </div>
+                            {/* Small Unit */}
+                            <div className="flex-1 flex items-center justify-between pl-2">
+                                <span className="text-xs text-gray-500">{item.product.unitSmall || '散'}</span>
+                                <div className="flex items-center gap-2">
+                                    <button onClick={() => updateQuantity(index, 'countSmall', -1)} className="p-1 bg-white dark:bg-gray-600 rounded shadow-sm"><Minus className="w-3 h-3"/></button>
+                                    <input 
+                                        type="number" 
+                                        value={item.countSmall} 
+                                        onChange={(e) => {
+                                            const val = parseInt(e.target.value) || 0;
+                                            const newList = [...scanList];
+                                            newList[index].countSmall = Math.max(0, val);
+                                            setScanList(newList);
+                                        }}
+                                        className="w-10 text-center bg-transparent font-bold outline-none text-blue-600" 
+                                    />
+                                    <button onClick={() => updateQuantity(index, 'countSmall', 1)} className="p-1 bg-white dark:bg-gray-600 rounded shadow-sm"><Plus className="w-3 h-3"/></button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+                {scanList.length === 0 && (
+                    <div className="text-center text-gray-400 py-10 flex flex-col items-center">
+                        <ScanLine className="w-12 h-12 mb-2 opacity-50"/>
+                        <p>请扫描商品条码加入清单</p>
                     </div>
                 )}
             </div>
 
-            {/* Bottom: List (60% Height - Footer) */}
-            <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 rounded-t-2xl -mt-4 z-10 shadow-2xl overflow-hidden relative">
-                <div className="p-3 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex justify-between items-center shrink-0">
-                    <h3 className="font-bold flex items-center gap-2"><ShoppingCart className="w-5 h-5 text-blue-500"/> 待出库清单</h3>
-                    <span className="text-xs text-gray-500">已扫 {totalTypes} 种</span>
+            {/* Bottom 10%: Actions */}
+            <div className="h-[10%] min-h-[80px] bg-white dark:bg-gray-800 border-t dark:border-gray-700 px-4 py-2 flex items-center justify-between shrink-0 safe-area-bottom">
+                <div>
+                    <div className="text-xs text-gray-500">待出库清单</div>
+                    <div className="font-bold text-xl text-blue-600">{scanList.length} <span className="text-sm text-gray-400 font-normal">种商品 (共{totalItems}散)</span></div>
                 </div>
-
-                <div className="flex-1 overflow-y-auto p-3 space-y-3" ref={scrollRef}>
-                    {cart.length === 0 ? (
-                        <div className="h-full flex flex-col items-center justify-center text-gray-400 opacity-60">
-                            <ScanLine className="w-16 h-16 mb-2"/>
-                            <p>请扫描上方条码添加商品</p>
-                        </div>
-                    ) : (
-                        cart.map((item, idx) => (
-                            <div key={`${item.id}_${idx}`} className={`flex flex-col gap-2 p-3 rounded-xl border transition-all duration-300 ${item.highlight ? 'bg-blue-50 border-blue-300 shadow-md scale-[1.02]' : 'bg-white dark:bg-gray-700 border-gray-100 dark:border-gray-600'}`}>
-                                <div className="flex justify-between items-start">
-                                    <div className="flex-1">
-                                        <div className="font-bold text-gray-800 dark:text-gray-200">{item.product.name}</div>
-                                        <div className="text-xs text-gray-400 font-mono mt-0.5">SKU: {item.product.sku}</div>
-                                    </div>
-                                    <button onClick={() => removeItem(idx)} className="text-gray-400 hover:text-red-500 p-1"><Trash2 className="w-4 h-4"/></button>
-                                </div>
-                                
-                                <div className="flex items-center gap-2 mt-1">
-                                    <div className="flex items-center gap-1 flex-1 bg-gray-50 dark:bg-gray-600 rounded-lg p-1 border dark:border-gray-500">
-                                        <input 
-                                            type="number" 
-                                            min="0"
-                                            value={item.countBig} 
-                                            onChange={e => updateQuantity(idx, 'countBig', Math.max(0, parseInt(e.target.value) || 0))}
-                                            className="w-full text-center bg-transparent font-bold outline-none text-lg"
-                                        />
-                                        <span className="text-xs text-gray-500 whitespace-nowrap pr-2">{item.product.unitBig}</span>
-                                    </div>
-                                    <Plus className="w-4 h-4 text-gray-300"/>
-                                    <div className="flex items-center gap-1 flex-1 bg-gray-50 dark:bg-gray-600 rounded-lg p-1 border dark:border-gray-500">
-                                        <input 
-                                            type="number" 
-                                            min="0"
-                                            value={item.countSmall} 
-                                            onChange={e => updateQuantity(idx, 'countSmall', Math.max(0, parseInt(e.target.value) || 0))}
-                                            className="w-full text-center bg-transparent font-bold outline-none text-lg"
-                                        />
-                                        <span className="text-xs text-gray-500 whitespace-nowrap pr-2">{item.product.unitSmall}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        ))
-                    )}
-                </div>
-
-                {/* Fixed Footer */}
-                <div className="p-4 border-t dark:border-gray-700 bg-white dark:bg-gray-800 pb-8 shrink-0">
-                    <div className="flex justify-between items-center mb-3">
-                        <span className="text-gray-500">合计 (小单位)</span>
-                        <span className="text-2xl font-bold text-blue-600">{totalSmallUnits}</span>
-                    </div>
-                    <div className="flex gap-3">
-                        <button onClick={onClose} className="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-xl font-bold">取消</button>
-                        <LoadingButton 
-                            onClick={handleSubmit} 
-                            loading={loading} 
-                            disabled={cart.length === 0}
-                            className="flex-[2] py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg"
-                        >
-                            确认出库 (智能扣减)
-                        </LoadingButton>
-                    </div>
-                </div>
+                <LoadingButton 
+                    onClick={handleSubmit} 
+                    loading={loading} 
+                    disabled={scanList.length === 0}
+                    className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-600/30 disabled:opacity-50"
+                >
+                    确认出库
+                </LoadingButton>
             </div>
         </div>
     );
 };
+
+
+// --- Main Inventory Component ---
 
 const AddBatchModal = ({ product, onClose, onConfirm }: any) => {
     const [form, setForm] = useState({
@@ -641,7 +571,7 @@ const Inventory = () => {
   const [productEditModal, setProductEditModal] = useState<any>({ open: false });
   const [stocktakingModal, setStocktakingModal] = useState<any>({ open: false });
   const [addBatchModal, setAddBatchModal] = useState<any>({ open: false });
-  const [cashierModalOpen, setCashierModalOpen] = useState(false);
+  const [showPOS, setShowPOS] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [isDeleteMode, setIsDeleteMode] = useState(false);
@@ -714,19 +644,13 @@ const Inventory = () => {
     return () => setPageActions({});
   }, [filteredProducts, setPageActions, currentStore]);
 
+  // Unified Billing Handler for Single items
   const handleBillingConfirm = async (type: 'in' | 'out', deltaTotal: number, detail: { big: number, small: number }) => {
       const { batch, product } = billingModal;
-      await handleBillingLogic(type, deltaTotal, detail, batch, product, false);
+      await handleBillingLogic(type, deltaTotal, detail, batch, product);
   };
 
-  // Replaced with internal logic inside CashierModal component for batch handling
-  const handleCashierConfirm = async (items: CartItem[]) => {
-      await reloadData();
-      alert(`出库成功: ${items.length} 种商品`);
-      setCashierModalOpen(false);
-  };
-
-  const handleBillingLogic = async (type: 'in' | 'out', deltaTotal: number, detail: { big: number, small: number }, batch: any, product: any, isQuick: boolean) => {
+  const handleBillingLogic = async (type: 'in' | 'out', deltaTotal: number, detail: { big: number, small: number }, batch: any, product: any) => {
       if (!batch || !product) return;
       const currentTotal = Number(batch.totalQuantity) || 0;
       const newTotal = type === 'in' ? currentTotal + deltaTotal : currentTotal - deltaTotal;
@@ -735,23 +659,95 @@ const Inventory = () => {
           if (p.id !== product.id) return p;
           return { ...p, batches: p.batches.map(b => b.id === batch.id ? { ...b, totalQuantity: newTotal } : b) };
       }));
-      if(!isQuick) setBillingModal({ open: false });
+      setBillingModal({ open: false });
       
       try {
           const { error } = await supabase.from('batches').update({ total_quantity: newTotal }).eq('id', batch.id);
           if (error) throw error;
-          const logDesc = `[${type === 'in' ? '入库' : (isQuick ? '快速出库' : '出库')}]: ${product.name} × ${detail.big}${product.unitBig}${detail.small}${product.unitSmall}`;
+          const logDesc = `[${type === 'in' ? '入库' : '出库'}]: ${product.name} × ${detail.big}${product.unitBig}${detail.small}${product.unitSmall}`;
           await supabase.from('operation_logs').insert({
-              id: `log_${Date.now()}_${Math.random()}`, action_type: type === 'in' ? LogAction.ENTRY_INBOUND : LogAction.ENTRY_OUTBOUND,
+              id: `log_${Date.now()}`, action_type: type === 'in' ? LogAction.ENTRY_INBOUND : LogAction.ENTRY_OUTBOUND,
               target_id: batch.id, target_name: product.name, change_desc: logDesc, change_delta: deltaTotal,
               operator_id: user?.id, operator_name: user?.username, role_level: user?.role,
               snapshot_data: { type: 'stock_change', old_stock: currentTotal, new_stock: newTotal, delta: deltaTotal, operation: type, productId: product.id },
               created_at: new Date().toISOString()
           });
           await syncProductStock(product.id);
-          // If not quick/bulk, reload full data
-          if(!isQuick) await reloadData();
-      } catch (err: any) { console.error(err); if(!isQuick) alert(`操作失败: ${err.message}`); reloadData(); }
+          await reloadData();
+      } catch (err: any) { console.error(err); alert(`操作失败: ${err.message}`); reloadData(); }
+  };
+
+  // --- POS Logic ---
+  const handlePOSSubmit = async (items: POSItem[]) => {
+      try {
+        const timestamp = Date.now();
+        let errorList: string[] = [];
+
+        for (const item of items) {
+             const rate = item.product.conversionRate || 10;
+             const totalDeduct = (item.countBig * rate) + item.countSmall;
+             if (totalDeduct <= 0) continue;
+
+             // Fetch fresh batches sorted by expiry (FIFO)
+             const { data: batches, error } = await supabase
+                .from('batches')
+                .select('*')
+                .eq('product_id', item.product.id)
+                .gt('total_quantity', 0)
+                .order('expiry_date', { ascending: true, nullsFirst: false });
+
+             if (error || !batches || batches.length === 0) {
+                 errorList.push(`${item.product.name} (无可用库存)`);
+                 continue;
+             }
+
+             let remaining = totalDeduct;
+             
+             for (const batch of batches) {
+                 if (remaining <= 0) break;
+                 const currentQty = Number(batch.total_quantity);
+                 const take = Math.min(currentQty, remaining);
+                 
+                 // Update DB
+                 await supabase.from('batches').update({ total_quantity: currentQty - take }).eq('id', batch.id);
+                 
+                 // Log
+                 await supabase.from('operation_logs').insert({
+                    id: `log_${timestamp}_${batch.id}`,
+                    action_type: LogAction.ENTRY_OUTBOUND,
+                    target_id: batch.id,
+                    target_name: item.product.name,
+                    change_desc: `[POS出库]: ${item.product.name} (自动扣减)`,
+                    change_delta: take,
+                    operator_id: user?.id,
+                    operator_name: user?.username,
+                    role_level: user?.role,
+                    snapshot_data: { type: 'stock_change', old_stock: currentQty, new_stock: currentQty - take, delta: take, operation: 'out', productId: item.product.id },
+                    created_at: new Date().toISOString()
+                 });
+
+                 remaining -= take;
+             }
+
+             if (remaining > 0) {
+                 errorList.push(`${item.product.name} (库存不足, 缺 ${remaining} 散)`);
+             }
+             
+             await syncProductStock(item.product.id);
+        }
+
+        if (errorList.length > 0) {
+            alert(`部分商品处理异常:\n${errorList.join('\n')}`);
+        } else {
+            // Optional: nice success UI or sound
+        }
+
+        await reloadData();
+        setShowPOS(false);
+
+      } catch (e: any) {
+          alert("出库失败: " + e.message);
+      }
   };
 
   const handleProductEditSave = async (data: any) => {
@@ -790,10 +786,10 @@ const Inventory = () => {
   return (
     <div className="space-y-6 animate-fade-in-up pb-20">
       {billingModal.open && <BillingModal {...billingModal} onClose={() => setBillingModal({ open: false })} onConfirm={handleBillingConfirm} />}
-      {cashierModalOpen && <CashierModal onClose={() => setCashierModalOpen(false)} onConfirm={handleCashierConfirm} products={products} currentStore={currentStore} user={user} />}
       {productEditModal.open && <ProductEditModal {...productEditModal} onClose={() => setProductEditModal({ open: false })} onSave={handleProductEditSave} />}
       {stocktakingModal.open && <StocktakingModal {...stocktakingModal} onClose={() => setStocktakingModal({ open: false })} onSave={handleStocktakingSave} />}
       {addBatchModal.open && <AddBatchModal {...addBatchModal} onClose={() => setAddBatchModal({ open: false })} onConfirm={handleAddBatch} />}
+      {showPOS && <POSModeOverlay onClose={() => setShowPOS(false)} currentStore={currentStore} products={isolatedProducts} onConfirm={handlePOSSubmit} />}
       {showScanner && <BarcodeScanner onScan={(val) => { setSearchTerm(val); setShowScanner(false); }} onClose={() => setShowScanner(false)} />}
       {lightboxSrc && <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
 
@@ -823,8 +819,8 @@ const Inventory = () => {
              </div>
              {!isParentView && (
                 <>
-                    <button onClick={() => setCashierModalOpen(true)} className="px-4 py-2 bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 rounded-xl font-bold flex items-center gap-2 hover:bg-yellow-200 transition-colors shadow-lg shadow-yellow-600/20 whitespace-nowrap">
-                        <Zap className="w-4 h-4"/> 快速出库
+                    <button onClick={() => setShowPOS(true)} className="px-4 py-2 bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 rounded-xl font-bold flex items-center gap-2 hover:bg-yellow-200 transition-colors shadow-lg shadow-yellow-600/20 whitespace-nowrap">
+                        <ShoppingCart className="w-4 h-4"/> 快速出库
                     </button>
                     <button onClick={() => navigate('/import')} className="px-4 py-2 bg-blue-600 text-white rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/20 whitespace-nowrap"><Plus className="w-4 h-4"/> 导入新商品</button>
                 </>
