@@ -34,6 +34,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose }) => {
                 fps: 15, 
                 qrbox: { width: 250, height: 250 }, 
                 aspectRatio: 1.0,
+                // Explicitly support common 1D formats + QR
                 formatsToSupport: [ 
                     window.Html5QrcodeSupportedFormats.QR_CODE,
                     window.Html5QrcodeSupportedFormats.EAN_13,
