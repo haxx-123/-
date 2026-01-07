@@ -51,19 +51,21 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose, contin
                     window.Html5QrcodeSupportedFormats.EAN_13,
                     window.Html5QrcodeSupportedFormats.CODE_128,
                     window.Html5QrcodeSupportedFormats.QR_CODE
-                ]
+                ],
+                // 4. Video Constraints (Moved here from start() first arg to avoid "found 4 keys" error)
+                videoConstraints: {
+                    width: { min: 640, ideal: 1280, max: 1920 },
+                    height: { min: 480, ideal: 720, max: 1080 },
+                    // @ts-ignore - focusMode is non-standard but often supported in advanced constraints
+                    focusMode: "continuous"
+                }
             };
             
-            // 4. Optimized Constraints (720p + Environment + Continuous Focus)
-            const constraints = { 
-                facingMode: "environment",
-                width: { min: 640, ideal: 1280, max: 1920 },
-                height: { min: 480, ideal: 720, max: 1080 },
-                focusMode: "continuous" // Try to request continuous focus
-            };
+            // 5. Camera ID or Config (Must have exactly 1 key: facingMode or deviceId)
+            const cameraConfig = { facingMode: "environment" };
 
             await html5QrCode.start(
-                constraints, 
+                cameraConfig, 
                 config,
                 (decodedText: string) => {
                     const now = Date.now();
@@ -102,19 +104,20 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose, contin
 
             // Check for Torch capability after start
             try {
-                const track = html5QrCode.getRunningTrackCameraCapabilities();
-                // Note: getRunningTrackCameraCapabilities isn't always reliable in all versions, 
-                // sometimes we need to access the video element stream directly.
-                // But let's try the API first or assume support if we can get the track.
-                const stream = document.querySelector('video')?.srcObject as MediaStream;
-                if (stream) {
-                    const videoTrack = stream.getVideoTracks()[0];
-                    const capabilities = videoTrack.getCapabilities();
-                    // @ts-ignore
-                    if (capabilities.torch) {
-                        setHasTorch(true);
-                    }
-                }
+                // Wait a bit for track to be active
+                setTimeout(() => {
+                    try {
+                       const videoElement = document.querySelector('#reader video') as HTMLVideoElement;
+                       if (videoElement && videoElement.srcObject) {
+                           const stream = videoElement.srcObject as MediaStream;
+                           const track = stream.getVideoTracks()[0];
+                           const capabilities = track.getCapabilities() as any;
+                           if (capabilities.torch) {
+                               setHasTorch(true);
+                           }
+                       }
+                    } catch (e) { console.warn("Torch detection failed", e); }
+                }, 500);
             } catch (e) {
                 console.warn("Torch check failed", e);
             }
@@ -135,7 +138,11 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose, contin
                 if (scannerRef.current.isScanning) {
                     scannerRef.current.stop().catch((err: any) => console.warn(err));
                 }
-                scannerRef.current.clear().catch((err: any) => console.warn("Scanner clear error:", err));
+                // Safe clear
+                const p = scannerRef.current.clear();
+                if (p && typeof p.catch === 'function') {
+                    p.catch((err: any) => console.warn("Scanner clear error:", err));
+                }
             } catch (e) {
                 console.warn("Scanner cleanup failed", e);
             }
@@ -144,15 +151,18 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose, contin
   }, []);
 
   const toggleTorch = async () => {
-      if (scannerRef.current) {
-          try {
-              await scannerRef.current.applyVideoConstraints({
-                  advanced: [{ torch: !torchOn }]
+      try {
+          const videoElement = document.querySelector('#reader video') as HTMLVideoElement;
+          if (videoElement && videoElement.srcObject) {
+              const stream = videoElement.srcObject as MediaStream;
+              const track = stream.getVideoTracks()[0];
+              await track.applyConstraints({
+                  advanced: [{ torch: !torchOn } as any]
               });
               setTorchOn(!torchOn);
-          } catch (err) {
-              console.error("Torch toggle failed", err);
           }
+      } catch (err) {
+          console.error("Torch toggle failed", err);
       }
   };
 
