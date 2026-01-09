@@ -6,7 +6,7 @@ import BarcodeScanner from '../components/BarcodeScanner';
 import * as XLSX from 'xlsx';
 import { useApp } from '../App';
 import { Product, Batch, RoleLevel, LogAction } from '../types';
-import { supabase, syncProductStock } from '../supabase';
+import { supabase, supabaseStorage, syncProductStock } from '../supabase';
 import imageCompression from 'browser-image-compression';
 
 // 6.2 Loading Button Component (Local Definition)
@@ -255,9 +255,9 @@ const ImportProducts = () => {
   const processAndUploadImage = async (file: File): Promise<string> => {
       // 1. Compress
       const compressed = await compressImage(file);
-      // 2. Upload
+      // 2. Upload (Use supabaseStorage for direct upload to avoid proxy 404)
       const fileName = `prod_${Date.now()}_${Math.random().toString(36).substr(2, 5)}.jpg`;
-      const { data, error } = await supabase.storage.from('images').upload(fileName, compressed, {
+      const { data, error } = await supabaseStorage.storage.from('images').upload(fileName, compressed, {
           contentType: 'image/jpeg',
           upsert: false
       });
@@ -265,8 +265,8 @@ const ImportProducts = () => {
           console.error("Upload failed:", error);
           throw error; // Explicitly throw error as requested
       }
-      // 3. Get Public URL
-      const { data: publicData } = supabase.storage.from('images').getPublicUrl(fileName);
+      // 3. Get Public URL (Use supabaseStorage)
+      const { data: publicData } = supabaseStorage.storage.from('images').getPublicUrl(fileName);
       return publicData.publicUrl;
   };
 

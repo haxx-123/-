@@ -6,7 +6,7 @@ import { Product, Batch, RoleLevel, LogAction } from '../types';
 import { useApp } from '../App';
 import { motion, AnimatePresence } from 'framer-motion';
 import BarcodeScanner from '../components/BarcodeScanner';
-import { supabase, syncProductStock } from '../supabase';
+import { supabase, supabaseStorage, syncProductStock } from '../supabase';
 import * as XLSX from 'xlsx';
 import imageCompression from 'browser-image-compression';
 
@@ -364,9 +364,9 @@ const ProductEditModal = ({ product, onClose, onSave }: any) => {
                 const options = { maxSizeMB: 0.2, maxWidthOrHeight: 1024, useWebWorker: true };
                 const compressedFile = await imageCompression(file, options);
                 const fileName = `prod_${Date.now()}_${Math.random().toString(36).substr(2, 5)}.jpg`;
-                const { error: uploadError } = await supabase.storage.from('images').upload(fileName, compressedFile);
+                const { error: uploadError } = await supabaseStorage.storage.from('images').upload(fileName, compressedFile);
                 if (uploadError) throw uploadError;
-                const { data: publicData } = supabase.storage.from('images').getPublicUrl(fileName);
+                const { data: publicData } = supabaseStorage.storage.from('images').getPublicUrl(fileName);
                 setForm(prev => ({ ...prev, image_url: publicData.publicUrl }));
             } catch (err: any) {
                 console.error("Image upload failed:", err);
