@@ -25,21 +25,6 @@ const LoadingButton = ({ onClick, loading, children, className, disabled }: any)
     </button>
 );
 
-// Internal Toast Component
-const SimpleToast = ({ message, onClose }: { message: string, onClose: () => void }) => {
-    useEffect(() => {
-        const timer = setTimeout(onClose, 3000);
-        return () => clearTimeout(timer);
-    }, [onClose]);
-    
-    return (
-        <div className="fixed top-20 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-full shadow-xl z-[100] flex items-center gap-2 animate-fade-in-up">
-            <CheckCircle className="w-5 h-5 text-green-400" />
-            <span className="text-sm font-bold">{message}</span>
-        </div>
-    );
-};
-
 // --- Type Definitions for Import ---
 interface ImportData {
     name: string;
@@ -247,9 +232,7 @@ const ImportProducts = () => {
   const [showCamera, setShowCamera] = useState(false);
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false); // 6.2 Lock
-  const [toastMsg, setToastMsg] = useState(''); // Gentle feedback
   const batchInputRef = useRef<HTMLInputElement>(null);
-  const nameInputRef = useRef<HTMLInputElement>(null); // Ref for name focus
   
   // Image handling
   const [previewImage, setPreviewImage] = useState<string | null>(null); // For display
@@ -434,8 +417,7 @@ const ImportProducts = () => {
               alert(`失败: ${res.message}`);
           } else {
               await supabase.from('operation_logs').insert({ id: `log_${Date.now()}`, action_type: LogAction.ENTRY_INBOUND, target_id: res.productId || 'manual', target_name: manualForm.name, change_desc: `[手动入库]: ${manualForm.name} × ${manualForm.quantityBig}${manualForm.unitBig}${manualForm.quantitySmall}${manualForm.unitSmall}`, operator_id: user?.id, operator_name: user?.username, role_level: user?.role, snapshot_data: {}, created_at: new Date().toISOString() });
-              // Alert replaced by Toast/Reset to streamline
-              setToastMsg('商品入库成功');
+              alert('入库成功');
               setManualForm(DEFAULT_IMPORT);
               setPreviewImage(null);
               setSelectedFile(null);
@@ -448,37 +430,10 @@ const ImportProducts = () => {
       }
   };
 
-  // Smart Parsing Scan Handling
+  // Scenario A: Scan Handling
   const handleManualScan = async (code: string) => {
     setShowBarcodeScanner(false);
     
-    // Step A: Check for "Rich Data" (Comma separated, e.g., Veterinary Drugs)
-    // Heuristic: "Batch, Name, SKU/License, Manufacturer, Notes..."
-    if (code.includes(',') || code.includes('，')) {
-        const parts = code.split(/[,，]/).map(s => s.trim());
-        const smartData: Partial<ImportData> = {};
-        
-        // 1. Batch Number (Usually the long number at start)
-        if (parts[0]) smartData.batchNumber = parts[0];
-        // 2. Name
-        if (parts[1]) smartData.name = parts[1];
-        // 3. SKU / License No
-        if (parts[2]) smartData.sku = parts[2];
-        // 4+. Notes
-        const notes = parts.slice(3).join(', ');
-        if (notes) smartData.notes = notes;
-
-        // Auto-fill and notify
-        setManualForm(prev => ({ ...prev, ...smartData }));
-        setToastMsg('已智能解析复合码数据');
-        
-        // Focus quantity input if name and batch are present
-        // (Assuming refs exist, but for now we focus Batch to confirm it)
-        setTimeout(() => batchInputRef.current?.focus(), 100);
-        return;
-    }
-
-    // Step B: Standard Barcode (1D/QR Single String)
     // 1. Search DB for SKU
     const { data: existingProduct } = await supabase.from('products')
         .select('*')
@@ -499,15 +454,12 @@ const ImportProducts = () => {
             image_url: existingProduct.image_url
         }));
         setPreviewImage(existingProduct.image_url || null);
-        setToastMsg('已匹配库中商品');
         // Focus Batch Number Input
         setTimeout(() => batchInputRef.current?.focus(), 100);
     } else {
-        // Not Found: Fill SKU only, No Alert
+        // Not Found: Fill SKU only
         setManualForm(prev => ({ ...prev, sku: code }));
-        setToastMsg('新商品，请补充名称');
-        // Focus Name Input
-        setTimeout(() => nameInputRef.current?.focus(), 100);
+        alert(`未找到SKU: ${code} 的商品，请手动补全信息`);
     }
   };
 
@@ -594,8 +546,7 @@ const ImportProducts = () => {
 
   return (
     <div className="space-y-6 animate-fade-in-up pb-20">
-      {/* Modals & Toasts */}
-      {toastMsg && <SimpleToast message={toastMsg} onClose={() => setToastMsg('')} />}
+      {/* Modals */}
       {showCamera && <CameraModal onCapture={handleCameraCapture} onClose={() => setShowCamera(false)} />}
       {showBarcodeScanner && <BarcodeScanner onScan={handleManualScan} onClose={() => setShowBarcodeScanner(false)} />}
       {conflictData && <ConsistencyModal conflict={conflictData} onClose={() => { setConflictData(null); setPendingTask(null); }} onResolve={(act) => { setConflictData(null); if (pendingTask) handleManualSubmit(act); }} />}
@@ -654,7 +605,6 @@ const ImportProducts = () => {
                           <div className="flex gap-2">
                             <div className="flex-1 relative">
                                 <input 
-                                    ref={nameInputRef}
                                     value={manualForm.name}
                                     onChange={e => {
                                         const val = e.target.value;

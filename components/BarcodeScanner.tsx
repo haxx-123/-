@@ -1,12 +1,12 @@
 
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Zap, ZapOff, Loader2 } from 'lucide-react';
+import { X, Zap, ZapOff, ScanLine, AlertCircle } from 'lucide-react';
 
 interface BarcodeScannerProps {
   onScan: (result: string) => void;
   onClose: () => void;
-  mode?: 'modal' | 'embedded'; // Embedded for POS mode
-  className?: string;
+  continuous?: boolean; // 新增：是否连续扫描模式
+  isEmbedded?: boolean; // 新增：是否嵌入模式（非全屏）
 }
 
 declare global {
@@ -16,197 +16,209 @@ declare global {
   }
 }
 
-const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose, mode = 'modal', className = '' }) => {
+// 简短的“滴”声 Base64，避免网络请求延迟
+const BEEP_AUDIO = "data:audio/wav;base64,UklGRl9vT1BXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU"; 
+
+const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose, continuous = false, isEmbedded = false }) => {
   const scannerRef = useRef<any>(null);
   const [error, setError] = useState<string>('');
-  const [loading, setLoading] = useState(true);
   const [torchOn, setTorchOn] = useState(false);
   const [hasTorch, setHasTorch] = useState(false);
-
-  const playBeep = () => {
-      const audio = new Audio('https://freetestdata.com/wp-content/uploads/2021/09/Free_Test_Data_1MB_MP3.mp3');
-      audio.volume = 0.5;
-      audio.play().catch(() => {});
-  };
+  const lastScanRef = useRef<string>('');
+  const lastScanTimeRef = useRef<number>(0);
 
   useEffect(() => {
     if (!window.Html5Qrcode) {
-        setError('组件加载失败，请检查网络');
+        setError('扫描组件加载失败，请检查网络连接。');
         return;
     }
 
-    const html5QrCode = new window.Html5Qrcode("reader");
-    scannerRef.current = html5QrCode;
-
     const startScanner = async () => {
         try {
-            // Critical Performance Config
+            const html5QrCode = new window.Html5Qrcode("reader");
+            scannerRef.current = html5QrCode;
+
+            // 1. 锁定核心格式，减少计算量
+            const formats = [ 
+                window.Html5QrcodeSupportedFormats.QR_CODE,
+                window.Html5QrcodeSupportedFormats.EAN_13,
+                window.Html5QrcodeSupportedFormats.CODE_128,
+            ];
+
+            // 2. 极致性能配置
             const config = { 
-                fps: 20, // Higher FPS for smoother scanning
+                fps: 20, // 提高帧率
                 qrbox: { width: 250, height: 250 }, 
                 aspectRatio: 1.0,
-                // Native Android Acceleration
+                formatsToSupport: formats,
+                // CRITICAL: 启用原生条码检测 (Android/iOS System API)，性能提升 10x
                 experimentalFeatures: {
                     useBarCodeDetectorIfSupported: true
                 },
-                // Limit formats to reduce CPU load
-                formatsToSupport: [ 
-                    window.Html5QrcodeSupportedFormats.QR_CODE,
-                    window.Html5QrcodeSupportedFormats.EAN_13,
-                    window.Html5QrcodeSupportedFormats.CODE_128,
-                    window.Html5QrcodeSupportedFormats.UPC_A
-                ]
-            };
-
-            // Camera Constraints for Mobile Web
-            const constraints = { 
-                facingMode: "environment",
-                focusMode: "continuous", // Try to force continuous focus
-                width: { min: 640, ideal: 1280, max: 1280 }, // 720p ideal for web processing
-                height: { min: 480, ideal: 720, max: 720 }
+                // 降低画面抖动影响
+                videoConstraints: {
+                    facingMode: "environment",
+                    focusMode: "continuous", // 连续对焦
+                    // 强制 720p，避免 4K/1080p 导致 JS 阻塞
+                    width: { min: 640, ideal: 1280, max: 1280 },
+                    height: { min: 480, ideal: 720, max: 720 }
+                }
             };
             
             await html5QrCode.start(
-                constraints, 
+                { facingMode: "environment" }, 
                 config,
                 (decodedText: string) => {
-                    // Success
-                    playBeep();
-                    onScan(decodedText);
-                    // If modal, we stop. If embedded (POS), we keep running.
-                    if (mode === 'modal') {
+                    // 防抖动逻辑 (1.5秒内不重复识别相同码)
+                    const now = Date.now();
+                    if (decodedText === lastScanRef.current && now - lastScanTimeRef.current < 1500) {
+                        return;
+                    }
+                    lastScanRef.current = decodedText;
+                    lastScanTimeRef.current = now;
+
+                    // 成功反馈：声音
+                    try {
+                        const audio = new Audio(BEEP_AUDIO);
+                        audio.volume = 0.5;
+                        audio.play().catch(() => {});
+                    } catch(e) {}
+                    
+                    if (continuous) {
+                        // 连续模式：只回调，不停止
+                        onScan(decodedText);
+                        // 视觉反馈：闪烁一下边框 (Optional UI logic handled via React state if needed)
+                    } else {
+                        // 单次模式：停止并回调
                         html5QrCode.stop().then(() => {
-                             html5QrCode.clear();
-                        }).catch((e: any) => console.warn(e));
+                            html5QrCode.clear();
+                            onScan(decodedText);
+                        }).catch((err: any) => {
+                            console.warn("Stop failed", err);
+                            onScan(decodedText);
+                        });
                     }
                 },
                 (errorMessage: string) => {
-                    // Ignore scan errors, they happen every frame
+                    // ignore scan error
                 }
             );
 
-            setLoading(false);
-
-            // Check for Torch capability
+            // 3. 检测闪光灯支持
             try {
                 const capabilities = html5QrCode.getRunningTrackCameraCapabilities();
                 if (capabilities && capabilities.torchFeature().isSupported()) {
                     setHasTorch(true);
                 }
-            } catch(e) {
-                console.log("Torch check failed", e);
+            } catch (e) {
+                // Ignore torch check errors
             }
 
-        } catch (err: any) {
-            console.error("Scanner Start Error", err);
-            setError("无法启动摄像头: " + (err.message || "权限被拒绝"));
-            setLoading(false);
+        } catch (err) {
+            console.error("Scanner Error", err);
+            setError("无法启动摄像头，请检查权限或换个浏览器。");
         }
     };
 
-    // Small delay to ensure DOM is ready
-    setTimeout(startScanner, 100);
+    // 延迟一点启动，防止 DOM 未挂载
+    const timer = setTimeout(startScanner, 100);
 
     return () => {
+        clearTimeout(timer);
         if (scannerRef.current) {
             try {
                 if (scannerRef.current.isScanning) {
                     scannerRef.current.stop().catch((e: any) => console.warn(e));
                 }
                 scannerRef.current.clear().catch((e: any) => console.warn(e));
-            } catch (e) { console.warn(e); }
+            } catch (e) { console.warn("Cleanup error", e); }
         }
     };
-  }, []); // Only run once on mount
+  }, [onScan, continuous]);
 
   const toggleTorch = () => {
       if (scannerRef.current && hasTorch) {
-          const target = !torchOn;
+          const nextState = !torchOn;
           scannerRef.current.applyVideoConstraints({
-              advanced: [{ torch: target }]
+              advanced: [{ torch: nextState }]
           }).then(() => {
-              setTorchOn(target);
-          }).catch((err: any) => console.error("Torch toggle failed", err));
+              setTorchOn(nextState);
+          }).catch((err: any) => console.error(err));
       }
   };
 
-  const containerClass = mode === 'modal' 
-      ? "fixed inset-0 z-[200] bg-black flex flex-col justify-center items-center" 
-      : `relative w-full h-full bg-black overflow-hidden ${className}`;
-
   return (
-    <div className={containerClass}>
-      {mode === 'modal' && (
-        <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-10 bg-gradient-to-b from-black/60 to-transparent">
-            <button onClick={onClose} className="p-2 bg-black/30 rounded-full text-white backdrop-blur-md">
-            <X className="w-6 h-6" />
-            </button>
-            <h3 className="text-white font-medium tracking-wide">扫描条形码</h3>
-            <div className="w-10"></div>
+    <div className={isEmbedded ? "w-full h-full relative bg-black overflow-hidden group" : `fixed inset-0 z-[200] bg-black flex flex-col ${continuous ? 'justify-start' : 'justify-center items-center'}`}>
+      
+      {/* Top Bar */}
+      <div className={`absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-10 ${isEmbedded ? 'pointer-events-none' : 'bg-gradient-to-b from-black/80 to-transparent'}`}>
+        {/* Left Action */}
+        <div className="pointer-events-auto">
+             {!isEmbedded && <button onClick={onClose} className="p-2 bg-black/40 rounded-full text-white backdrop-blur-md hover:bg-white/20 transition-colors"><X className="w-6 h-6" /></button>}
         </div>
-      )}
+        
+        {/* Center Title */}
+        {!isEmbedded && (
+            <h3 className="text-white font-medium tracking-wide flex items-center gap-2">
+                <ScanLine className="w-4 h-4 text-green-400"/> {continuous ? '连续扫码模式' : '扫描条码'}
+            </h3>
+        )}
 
-      <div className={`relative ${mode === 'modal' ? 'w-full max-w-md aspect-[3/4] rounded-xl' : 'w-full h-full'}`}>
-         {loading && (
-             <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-20">
-                 <Loader2 className="w-8 h-8 animate-spin mb-2" />
-                 <p className="text-sm">正在启动相机...</p>
-             </div>
-         )}
-         
-         <div id="reader" className="w-full h-full bg-black"></div>
-         
-         {/* Overlays */}
-         {error && (
-             <div className="absolute inset-0 flex items-center justify-center bg-black text-white p-6 text-center z-30">
-                 <p className="text-red-400">{error}</p>
-                 <button onClick={onClose} className="mt-4 px-4 py-2 bg-white/20 rounded-full">关闭</button>
-             </div>
-         )}
-
-         {!error && !loading && (
-             <>
-                 {/* Torch Button */}
-                 {hasTorch && (
-                     <button 
-                        onClick={toggleTorch} 
-                        className="absolute bottom-4 right-4 z-30 p-3 rounded-full bg-black/40 text-white backdrop-blur-md border border-white/20"
-                     >
-                         {torchOn ? <Zap className="w-6 h-6 text-yellow-400 fill-current"/> : <ZapOff className="w-6 h-6"/>}
-                     </button>
-                 )}
-                 
-                 {/* Laser Animation */}
-                 <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                     <div className="w-[70%] h-[50%] border-2 border-green-500/50 rounded-lg relative overflow-hidden">
-                         <div className="absolute left-0 right-0 h-0.5 bg-red-500 top-1/2 animate-scan-laser shadow-[0_0_10px_rgba(239,68,68,0.8)]"></div>
-                     </div>
-                 </div>
-             </>
-         )}
+        {/* Right Action (Torch) */}
+        <div className="w-10 flex justify-end pointer-events-auto">
+            {hasTorch && (
+                <button onClick={toggleTorch} className={`p-2 rounded-full transition-colors ${torchOn ? 'bg-yellow-400 text-black' : 'bg-black/40 text-white'}`}>
+                    {torchOn ? <Zap className="w-6 h-6 fill-current" /> : <ZapOff className="w-6 h-6" />}
+                </button>
+            )}
+        </div>
       </div>
 
-      {mode === 'modal' && (
-          <p className="text-white/80 text-sm mt-6 bg-white/10 px-4 py-2 rounded-full backdrop-blur-md">
-              对准条码/二维码即可自动识别
-          </p>
-      )}
+      {/* Scanner Viewport */}
+      <div className={isEmbedded ? "w-full h-full relative" : `w-full relative bg-black overflow-hidden ${continuous ? 'h-[40vh] border-b border-gray-800' : 'max-w-md aspect-[3/4] rounded-xl'}`}>
+         <div id="reader" className="w-full h-full"></div>
+         
+         {error && (
+             <div className="absolute inset-0 flex items-center justify-center bg-black text-white p-6 text-center z-20">
+                 <div className="flex flex-col items-center gap-2">
+                     <AlertCircle className="w-8 h-8 text-red-500"/>
+                     <p className="text-red-400">{error}</p>
+                 </div>
+             </div>
+         )}
+         
+         {!error && (
+             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                 {/* Simplified Responsive Overlay */}
+                 <div className={`relative border-2 border-green-500/50 bg-transparent ${isEmbedded ? 'h-3/5 w-3/5 md:w-96 md:h-48' : 'w-64 h-64'}`}>
+                    {/* Laser */}
+                    <div className="absolute left-0 right-0 h-0.5 bg-red-500/80 top-1/2 animate-scan-laser shadow-[0_0_15px_rgba(239,68,68,1)]"></div>
+                    {/* Corners */}
+                    <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-green-500"></div>
+                    <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-green-500"></div>
+                    <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-green-500"></div>
+                    <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-green-500"></div>
+                 </div>
+                 
+                 {/* Helper Text */}
+                 <div className="absolute bottom-4 text-white/70 text-xs bg-black/40 px-3 py-1 rounded-full backdrop-blur-sm">
+                     {isEmbedded ? '将条码放入框内' : '将条码放入框内，自动识别'}
+                 </div>
+             </div>
+         )}
+      </div>
 
       <style>{`
         @keyframes scan-laser {
             0% { top: 10%; opacity: 0; }
-            20% { opacity: 1; }
-            50% { top: 90%; }
-            80% { opacity: 1; }
-            100% { top: 10%; opacity: 0; }
+            50% { opacity: 1; }
+            100% { top: 90%; opacity: 0; }
         }
         .animate-scan-laser {
             animation: scan-laser 1.5s linear infinite;
         }
         #reader video {
             object-fit: cover;
-            width: 100% !important;
-            height: 100% !important;
         }
       `}</style>
     </div>

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Search, ChevronDown, ChevronRight, Plus, Package, FileText, Edit2, X, Save, ArrowRightLeft, Info, ScanLine, Filter, MapPin, Trash2, Image as ImageIcon, ChevronLeft, CheckSquare, Square, Box, Loader2, Calculator, AlertTriangle, Calendar, Camera, Zap, ShoppingCart, Minus, PlusCircle } from 'lucide-react';
+import { Search, ChevronDown, ChevronRight, Plus, Package, FileText, Edit2, X, Save, ArrowRightLeft, Info, ScanLine, Filter, MapPin, Trash2, Image as ImageIcon, ChevronLeft, CheckSquare, Square, Box, Loader2, Calculator, AlertTriangle, Calendar, Camera, Zap, ShoppingCart, MinusCircle, PlusCircle, CheckCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Product, Batch, RoleLevel, LogAction } from '../types';
 import { useApp } from '../App';
@@ -72,188 +72,119 @@ const ImageLightbox = ({ src, onClose }: { src: string, onClose: () => void }) =
     </div>
 );
 
-// --- POS Mode Component (Overlay) ---
-interface POSItem {
+// --- Interface for POS List ---
+interface PosItem {
+    tempId: string; // Unique ID for list rendering
     product: Product;
-    countBig: number;
-    countSmall: number;
-    timestamp: number;
+    qtyBig: number;
+    qtySmall: number;
 }
 
-const POSModeOverlay = ({ onClose, currentStore, products, onConfirm }: { onClose: () => void, currentStore: any, products: Product[], onConfirm: (items: POSItem[]) => Promise<void> }) => {
-    const [scanList, setScanList] = useState<POSItem[]>([]);
-    const [loading, setLoading] = useState(false);
-    const listRef = useRef<HTMLDivElement>(null);
+// --- Modals & Components ---
 
-    // Continuous Scan Handler
-    const handleScan = (code: string) => {
-        // 1. Find product
-        let found = products.find(p => p.sku === code && p.storeId === currentStore.id);
-        
-        // 2. Fallback: Search by Batch Number (if SKU not found)
-        if (!found) {
-            for (const p of products) {
-                if (p.storeId !== currentStore.id) continue;
-                if (p.batches.some(b => b.batchNumber === code)) {
-                    found = p;
-                    break;
-                }
-            }
-        }
-
-        if (found) {
-            setScanList(prev => {
-                const existingIndex = prev.findIndex(item => item.product.id === found!.id);
-                if (existingIndex > -1) {
-                    // Increment existing (Default: add 1 small unit)
-                    const newList = [...prev];
-                    newList[existingIndex].countSmall += 1;
-                    // Move to top
-                    const item = newList.splice(existingIndex, 1)[0];
-                    item.timestamp = Date.now();
-                    return [item, ...newList];
-                } else {
-                    // Add new
-                    return [{ product: found!, countBig: 0, countSmall: 1, timestamp: Date.now() }, ...prev];
-                }
-            });
-            // Auto scroll to top
-            if (listRef.current) listRef.current.scrollTop = 0;
-        } else {
-            // Error Feedback (Vibrate if possible)
-            if (navigator.vibrate) navigator.vibrate(200);
-            // We use a temporary simple toast or alert logic here, but keeping scan active
-            // Ideally, show a overlay notification inside the scanner area
-            const toast = document.getElementById('scan-toast');
-            if (toast) {
-                toast.innerText = `未找到商品: ${code}`;
-                toast.style.opacity = '1';
-                setTimeout(() => toast.style.opacity = '0', 2000);
-            }
-        }
-    };
-
-    const updateQuantity = (index: number, field: 'countBig' | 'countSmall', delta: number) => {
-        setScanList(prev => {
-            const newList = [...prev];
-            const newVal = newList[index][field] + delta;
-            if (newVal >= 0) newList[index][field] = newVal;
-            return newList;
-        });
-    };
-
-    const removeItem = (index: number) => {
-        setScanList(prev => prev.filter((_, i) => i !== index));
-    };
-
-    const handleSubmit = async () => {
-        if (scanList.length === 0) return;
-        setLoading(true);
-        await onConfirm(scanList);
-        setLoading(false);
-    };
-
-    const totalItems = scanList.reduce((acc, item) => acc + (item.countBig * (item.product.conversionRate || 10)) + item.countSmall, 0);
-
+const PosOverlay = ({ 
+    items, 
+    onClose, 
+    onScan, 
+    onUpdateQty, 
+    onRemove, 
+    onSubmit, 
+    loading 
+}: { 
+    items: PosItem[], 
+    onClose: () => void, 
+    onScan: (code: string) => void, 
+    onUpdateQty: (id: string, field: 'qtyBig' | 'qtySmall', val: number) => void,
+    onRemove: (id: string) => void,
+    onSubmit: () => void,
+    loading: boolean
+}) => {
+    // New Design: Centered Modal with fixed height percentages (30% Scanner / 55% List / 15% Footer)
     return (
-        <div className="fixed inset-0 z-[100] bg-gray-100 dark:bg-gray-900 flex flex-col h-full animate-fade-in">
-            {/* Top 40%: Scanner */}
-            <div className="h-[40%] bg-black relative shrink-0">
-                <BarcodeScanner onScan={handleScan} onClose={() => {}} mode="embedded" />
-                <button onClick={onClose} className="absolute top-4 right-4 p-2 bg-black/50 text-white rounded-full z-20 backdrop-blur-md">
-                    <X className="w-6 h-6"/>
-                </button>
-                <div id="scan-toast" className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-red-600 text-white px-4 py-2 rounded-full text-sm font-bold opacity-0 transition-opacity pointer-events-none z-20">
-                    未找到商品
+        <div className="fixed inset-0 z-[50] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+            {/* Modal Container: Enlarged max-width for better desktop experience */}
+            <div className="bg-white dark:bg-gray-800 w-full max-w-5xl h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col relative animate-scale-up border dark:border-gray-700">
+                
+                {/* 1. Top 30%: Scanner */}
+                <div className="h-[30%] bg-black relative shrink-0">
+                    <BarcodeScanner 
+                        onScan={onScan} 
+                        onClose={() => {}} // No-op, close handled by modal X
+                        continuous={true}
+                        isEmbedded={true}
+                    />
+                    {/* Visual cue for scanner area */}
+                    <div className="absolute top-2 left-2 text-[10px] text-white/70 bg-black/30 px-2 py-0.5 rounded backdrop-blur-sm flex items-center gap-1 pointer-events-none">
+                        <Zap className="w-3 h-3 text-yellow-400 fill-current"/> 扫码区域
+                    </div>
                 </div>
-                <div className="absolute top-4 left-4 text-white/80 text-xs font-mono bg-black/40 px-2 py-1 rounded">
-                    POS 连续扫码模式
-                </div>
-            </div>
 
-            {/* Middle 50%: List */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-100 dark:bg-gray-900" ref={listRef}>
-                {scanList.map((item, index) => (
-                    <div key={item.timestamp} className="bg-white dark:bg-gray-800 p-3 rounded-xl shadow-sm flex flex-col gap-2 border border-gray-100 dark:border-gray-700 animate-slide-down">
-                        <div className="flex justify-between items-start">
-                            <div>
-                                <h4 className="font-bold text-gray-800 dark:text-gray-100">{item.product.name}</h4>
-                                <p className="text-xs text-gray-400 font-mono">{item.product.sku}</p>
-                            </div>
-                            <button onClick={() => removeItem(index)} className="p-2 text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4"/></button>
+                {/* 2. Middle 55%: List */}
+                <div className="h-[55%] flex flex-col bg-white dark:bg-gray-800 relative">
+                    {/* List Header */}
+                    <div className="p-3 border-b dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900/50 sticky top-0 z-10 shrink-0">
+                        <div className="flex items-center gap-2">
+                            <ShoppingCart className="w-4 h-4 text-orange-500"/> 
+                            <span className="font-bold text-sm text-gray-800 dark:text-gray-200">待出库清单 ({items.length})</span>
                         </div>
-                        
-                        <div className="flex items-center gap-4 bg-gray-50 dark:bg-gray-700/30 p-2 rounded-lg">
-                            {/* Big Unit */}
-                            <div className="flex-1 flex items-center justify-between border-r dark:border-gray-600 pr-2">
-                                <span className="text-xs text-gray-500">{item.product.unitBig || '整'}</span>
-                                <div className="flex items-center gap-2">
-                                    <button onClick={() => updateQuantity(index, 'countBig', -1)} className="p-1 bg-white dark:bg-gray-600 rounded shadow-sm"><Minus className="w-3 h-3"/></button>
-                                    <input 
-                                        type="number" 
-                                        value={item.countBig} 
-                                        onChange={(e) => {
-                                            const val = parseInt(e.target.value) || 0;
-                                            const newList = [...scanList];
-                                            newList[index].countBig = Math.max(0, val);
-                                            setScanList(newList);
-                                        }}
-                                        className="w-10 text-center bg-transparent font-bold outline-none" 
-                                    />
-                                    <button onClick={() => updateQuantity(index, 'countBig', 1)} className="p-1 bg-white dark:bg-gray-600 rounded shadow-sm"><Plus className="w-3 h-3"/></button>
+                        <button onClick={onClose} className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full text-gray-500"><X className="w-5 h-5"/></button>
+                    </div>
+                    
+                    {/* Scrollable List */}
+                    <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                        {/* Empty State */}
+                        {items.length === 0 && (
+                            <div className="h-full flex flex-col items-center justify-center text-gray-400 opacity-60">
+                                <ScanLine className="w-12 h-12 mb-2 stroke-1"/>
+                                <p className="text-xs">上方扫码或手动添加</p>
+                            </div>
+                        )}
+                        {/* Items */}
+                        {items.map(item => (
+                            <div key={item.tempId} className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-2 flex items-center gap-2 border border-gray-100 dark:border-gray-700">
+                                <button onClick={() => onRemove(item.tempId)} className="p-2 text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4"/></button>
+                                <div className="flex-1 min-w-0">
+                                    <div className="font-bold text-sm truncate text-gray-800 dark:text-gray-200">{item.product.name}</div>
+                                    <div className="text-[10px] text-gray-500 font-mono truncate">{item.product.sku}</div>
+                                </div>
+                                {/* Qty Inputs */}
+                                <div className="flex items-center gap-1 shrink-0">
+                                    <div className="flex flex-col items-center w-12">
+                                        <input type="number" min="0" className="w-full text-center p-0.5 border rounded text-sm font-bold bg-white dark:bg-gray-600 dark:border-gray-500 dark:text-white outline-none focus:ring-1 focus:ring-blue-500" value={item.qtyBig} onChange={(e) => onUpdateQty(item.tempId, 'qtyBig', parseInt(e.target.value)||0)} onFocus={(e) => e.target.select()}/>
+                                        <span className="text-[10px] text-gray-400">{item.product.unitBig}</span>
+                                    </div>
+                                    <div className="flex flex-col items-center w-12">
+                                        <input type="number" min="0" className="w-full text-center p-0.5 border rounded text-sm font-bold bg-white dark:bg-gray-600 dark:border-gray-500 dark:text-white outline-none focus:ring-1 focus:ring-blue-500" value={item.qtySmall} onChange={(e) => onUpdateQty(item.tempId, 'qtySmall', parseInt(e.target.value)||0)} onFocus={(e) => e.target.select()}/>
+                                        <span className="text-[10px] text-gray-400">{item.product.unitSmall}</span>
+                                    </div>
                                 </div>
                             </div>
-                            {/* Small Unit */}
-                            <div className="flex-1 flex items-center justify-between pl-2">
-                                <span className="text-xs text-gray-500">{item.product.unitSmall || '散'}</span>
-                                <div className="flex items-center gap-2">
-                                    <button onClick={() => updateQuantity(index, 'countSmall', -1)} className="p-1 bg-white dark:bg-gray-600 rounded shadow-sm"><Minus className="w-3 h-3"/></button>
-                                    <input 
-                                        type="number" 
-                                        value={item.countSmall} 
-                                        onChange={(e) => {
-                                            const val = parseInt(e.target.value) || 0;
-                                            const newList = [...scanList];
-                                            newList[index].countSmall = Math.max(0, val);
-                                            setScanList(newList);
-                                        }}
-                                        className="w-10 text-center bg-transparent font-bold outline-none text-blue-600" 
-                                    />
-                                    <button onClick={() => updateQuantity(index, 'countSmall', 1)} className="p-1 bg-white dark:bg-gray-600 rounded shadow-sm"><Plus className="w-3 h-3"/></button>
-                                </div>
-                            </div>
-                        </div>
+                        ))}
                     </div>
-                ))}
-                {scanList.length === 0 && (
-                    <div className="text-center text-gray-400 py-10 flex flex-col items-center">
-                        <ScanLine className="w-12 h-12 mb-2 opacity-50"/>
-                        <p>请扫描商品条码加入清单</p>
-                    </div>
-                )}
-            </div>
-
-            {/* Bottom 10%: Actions */}
-            <div className="h-[10%] min-h-[80px] bg-white dark:bg-gray-800 border-t dark:border-gray-700 px-4 py-2 flex items-center justify-between shrink-0 safe-area-bottom">
-                <div>
-                    <div className="text-xs text-gray-500">待出库清单</div>
-                    <div className="font-bold text-xl text-blue-600">{scanList.length} <span className="text-sm text-gray-400 font-normal">种商品 (共{totalItems}散)</span></div>
                 </div>
-                <LoadingButton 
-                    onClick={handleSubmit} 
-                    loading={loading} 
-                    disabled={scanList.length === 0}
-                    className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-600/30 disabled:opacity-50"
-                >
-                    确认出库
-                </LoadingButton>
+
+                {/* 3. Bottom 15%: Footer */}
+                <div className="h-[15%] p-4 bg-gray-50 dark:bg-gray-900 border-t dark:border-gray-700 flex flex-col justify-center gap-2 shrink-0">
+                    <div className="flex justify-between items-center text-xs text-gray-500 dark:text-gray-400">
+                        <span>自动扣减批次 (FIFO)</span>
+                        <span>共 {items.length} 项</span>
+                    </div>
+                    <LoadingButton 
+                        loading={loading} 
+                        disabled={items.length === 0}
+                        onClick={onSubmit} 
+                        className="w-full py-2.5 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 text-sm hover:scale-[1.02] transition-transform"
+                    >
+                        <CheckCircle className="w-4 h-4"/> 确认出库
+                    </LoadingButton>
+                </div>
+
             </div>
         </div>
     );
 };
 
-
-// --- Main Inventory Component ---
+// ... (Other Modals: AddBatch, Billing, ProductEdit, Stocktaking kept as is) ...
 
 const AddBatchModal = ({ product, onClose, onConfirm }: any) => {
     const [form, setForm] = useState({
@@ -286,18 +217,11 @@ const AddBatchModal = ({ product, onClose, onConfirm }: any) => {
         setLoading(false);
     };
 
-    // Scenario B: Context-Aware Scan
     const handleScan = (code: string) => {
         setShowScanner(false);
-        // If the scanned code matches the Product SKU, it means user scanned the product to verify identity.
         if (code === product.sku) {
-            // Good match, focus batch number input
             setTimeout(() => batchInputRef.current?.focus(), 100);
         } else {
-            // Mismatch or just a random code. Assuming it's the batch number if scanning onto a batch field?
-            // User requirement: "Check if scanned SKU matches... If mismatch show warning"
-            // If the user scans a Batch Barcode (e.g. GS1-128), it won't match SKU.
-            // But specifically for the requirement:
             if (code !== product.sku) {
                 if(!window.confirm(`警告: 扫描的条码 (${code}) 与当前商品 SKU (${product.sku}) 不匹配。\n\n是否仍将其填入“批号”栏？`)) {
                     return;
@@ -567,18 +491,26 @@ const Inventory = () => {
   const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
+  
+  // Modal States
   const [billingModal, setBillingModal] = useState<any>({ open: false });
   const [productEditModal, setProductEditModal] = useState<any>({ open: false });
   const [stocktakingModal, setStocktakingModal] = useState<any>({ open: false });
   const [addBatchModal, setAddBatchModal] = useState<any>({ open: false });
-  const [showPOS, setShowPOS] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  
+  // --- POS Mode States ---
+  const [showPosMode, setShowPosMode] = useState(false);
+  const [posList, setPosList] = useState<PosItem[]>([]);
+  const [posLoading, setPosLoading] = useState(false);
+
   const [isDeleteMode, setIsDeleteMode] = useState(false);
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 15;
 
+  // ... (Calculations logic same as before) ...
   const isolatedProducts = useMemo(() => {
       return products.filter(p => {
           if (currentStore.isParent) return (currentStore.childrenIds || []).includes(p.storeId);
@@ -644,13 +576,144 @@ const Inventory = () => {
     return () => setPageActions({});
   }, [filteredProducts, setPageActions, currentStore]);
 
-  // Unified Billing Handler for Single items
-  const handleBillingConfirm = async (type: 'in' | 'out', deltaTotal: number, detail: { big: number, small: number }) => {
-      const { batch, product } = billingModal;
-      await handleBillingLogic(type, deltaTotal, detail, batch, product);
+  // --- POS Mode Logic ---
+  const handlePosScan = (code: string) => {
+      // 1. Search in current products (by SKU)
+      const matchedProduct = isolatedProducts.find(p => p.sku === code);
+      if (!matchedProduct) {
+          // Toast or simple alert logic needed, using alert for now to not break scan flow too much
+          // In real app, use a non-blocking toast
+          // alert(`未找到商品: ${code}`); 
+          // Don't block, just ignore or maybe play error sound if possible
+          return;
+      }
+
+      setPosList(prev => {
+          // Check if already in list
+          const existingIdx = prev.findIndex(item => item.product.id === matchedProduct.id);
+          if (existingIdx >= 0) {
+              const newList = [...prev];
+              newList[existingIdx] = {
+                  ...newList[existingIdx],
+                  qtySmall: newList[existingIdx].qtySmall + 1 // Increment small unit by default
+              };
+              return newList;
+          } else {
+              // Add new
+              return [{
+                  tempId: Date.now().toString() + Math.random(),
+                  product: matchedProduct,
+                  qtyBig: 0,
+                  qtySmall: 1
+              }, ...prev];
+          }
+      });
   };
 
-  const handleBillingLogic = async (type: 'in' | 'out', deltaTotal: number, detail: { big: number, small: number }, batch: any, product: any) => {
+  const handlePosSubmit = async () => {
+      setPosLoading(true);
+      
+      try {
+          // 1. Pre-calculate total deltas and validate stock
+          const processQueue = [];
+
+          for (const item of posList) {
+              const { product, qtyBig, qtySmall } = item;
+              const rate = Number(product.conversionRate) || 10;
+              const safeRate = rate === 0 ? 10 : rate;
+              const deltaRequired = (qtyBig * safeRate) + qtySmall;
+              
+              if (deltaRequired <= 0) continue;
+
+              // Find available batches (FIFO: Earliest Expiry First)
+              const sortedBatches = [...product.batches]
+                  .filter(b => b.totalQuantity > 0)
+                  .sort((a, b) => {
+                      if (a.expiryDate && b.expiryDate) return new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime();
+                      if (a.expiryDate) return -1; // With expiry comes first
+                      if (b.expiryDate) return 1;
+                      return 0;
+                  });
+
+              let remainingToDeduct = deltaRequired;
+              const deductionPlan: { batchId: string, amount: number, current: number }[] = [];
+              const totalAvailable = sortedBatches.reduce((acc, b) => acc + b.totalQuantity, 0);
+
+              if (totalAvailable < deltaRequired) {
+                  throw new Error(`商品 "${product.name}" 库存不足！\n需出库: ${deltaRequired}\n当前库存: ${totalAvailable}`);
+              }
+
+              for (const batch of sortedBatches) {
+                  if (remainingToDeduct <= 0) break;
+                  
+                  const deduct = Math.min(batch.totalQuantity, remainingToDeduct);
+                  deductionPlan.push({ 
+                      batchId: batch.id, 
+                      amount: deduct,
+                      current: batch.totalQuantity 
+                  });
+                  remainingToDeduct -= deduct;
+              }
+
+              processQueue.push({ product, plan: deductionPlan, totalDelta: deltaRequired });
+          }
+
+          // 2. Execute Updates
+          // Sequential execution to ensure integrity (Supabase doesn't support complex transactions easily via REST)
+          for (const task of processQueue) {
+              for (const step of task.plan) {
+                  const newQty = step.current - step.amount;
+                  
+                  // Update DB
+                  await supabase.from('batches').update({ total_quantity: newQty }).eq('id', step.batchId);
+                  
+                  // Log
+                  const logDesc = `[快速出库]: ${task.product.name} (自动扣减)`;
+                  await supabase.from('operation_logs').insert({
+                      id: `log_${Date.now()}_${Math.random()}`,
+                      action_type: LogAction.ENTRY_OUTBOUND,
+                      target_id: step.batchId,
+                      target_name: task.product.name,
+                      change_desc: logDesc,
+                      change_delta: step.amount,
+                      operator_id: user?.id,
+                      operator_name: user?.username,
+                      role_level: user?.role,
+                      snapshot_data: { 
+                          type: 'stock_change', 
+                          old_stock: step.current, 
+                          new_stock: newQty, 
+                          delta: step.amount, 
+                          operation: 'out', 
+                          productId: task.product.id 
+                      },
+                      created_at: new Date().toISOString()
+                  });
+              }
+              // Sync product totals
+              await syncProductStock(task.product.id);
+          }
+
+          await reloadData();
+          setPosList([]);
+          setShowPosMode(false);
+          alert("出库成功！");
+
+      } catch (err: any) {
+          alert(err.message);
+      } finally {
+          setPosLoading(false);
+      }
+  };
+
+
+  // --- Standard Logic ---
+  const handleBillingConfirm = async (type: 'in' | 'out', deltaTotal: number, detail: { big: number, small: number }) => {
+      const { batch, product } = billingModal;
+      await handleBillingLogic(type, deltaTotal, detail, batch, product, false);
+  };
+
+  const handleBillingLogic = async (type: 'in' | 'out', deltaTotal: number, detail: { big: number, small: number }, batch: any, product: any, isQuick: boolean) => {
       if (!batch || !product) return;
       const currentTotal = Number(batch.totalQuantity) || 0;
       const newTotal = type === 'in' ? currentTotal + deltaTotal : currentTotal - deltaTotal;
@@ -664,7 +727,7 @@ const Inventory = () => {
       try {
           const { error } = await supabase.from('batches').update({ total_quantity: newTotal }).eq('id', batch.id);
           if (error) throw error;
-          const logDesc = `[${type === 'in' ? '入库' : '出库'}]: ${product.name} × ${detail.big}${product.unitBig}${detail.small}${product.unitSmall}`;
+          const logDesc = `[${type === 'in' ? '入库' : (isQuick ? '快速出库' : '出库')}]: ${product.name} × ${detail.big}${product.unitBig}${detail.small}${product.unitSmall}`;
           await supabase.from('operation_logs').insert({
               id: `log_${Date.now()}`, action_type: type === 'in' ? LogAction.ENTRY_INBOUND : LogAction.ENTRY_OUTBOUND,
               target_id: batch.id, target_name: product.name, change_desc: logDesc, change_delta: deltaTotal,
@@ -675,79 +738,6 @@ const Inventory = () => {
           await syncProductStock(product.id);
           await reloadData();
       } catch (err: any) { console.error(err); alert(`操作失败: ${err.message}`); reloadData(); }
-  };
-
-  // --- POS Logic ---
-  const handlePOSSubmit = async (items: POSItem[]) => {
-      try {
-        const timestamp = Date.now();
-        let errorList: string[] = [];
-
-        for (const item of items) {
-             const rate = item.product.conversionRate || 10;
-             const totalDeduct = (item.countBig * rate) + item.countSmall;
-             if (totalDeduct <= 0) continue;
-
-             // Fetch fresh batches sorted by expiry (FIFO)
-             const { data: batches, error } = await supabase
-                .from('batches')
-                .select('*')
-                .eq('product_id', item.product.id)
-                .gt('total_quantity', 0)
-                .order('expiry_date', { ascending: true, nullsFirst: false });
-
-             if (error || !batches || batches.length === 0) {
-                 errorList.push(`${item.product.name} (无可用库存)`);
-                 continue;
-             }
-
-             let remaining = totalDeduct;
-             
-             for (const batch of batches) {
-                 if (remaining <= 0) break;
-                 const currentQty = Number(batch.total_quantity);
-                 const take = Math.min(currentQty, remaining);
-                 
-                 // Update DB
-                 await supabase.from('batches').update({ total_quantity: currentQty - take }).eq('id', batch.id);
-                 
-                 // Log
-                 await supabase.from('operation_logs').insert({
-                    id: `log_${timestamp}_${batch.id}`,
-                    action_type: LogAction.ENTRY_OUTBOUND,
-                    target_id: batch.id,
-                    target_name: item.product.name,
-                    change_desc: `[POS出库]: ${item.product.name} (自动扣减)`,
-                    change_delta: take,
-                    operator_id: user?.id,
-                    operator_name: user?.username,
-                    role_level: user?.role,
-                    snapshot_data: { type: 'stock_change', old_stock: currentQty, new_stock: currentQty - take, delta: take, operation: 'out', productId: item.product.id },
-                    created_at: new Date().toISOString()
-                 });
-
-                 remaining -= take;
-             }
-
-             if (remaining > 0) {
-                 errorList.push(`${item.product.name} (库存不足, 缺 ${remaining} 散)`);
-             }
-             
-             await syncProductStock(item.product.id);
-        }
-
-        if (errorList.length > 0) {
-            alert(`部分商品处理异常:\n${errorList.join('\n')}`);
-        } else {
-            // Optional: nice success UI or sound
-        }
-
-        await reloadData();
-        setShowPOS(false);
-
-      } catch (e: any) {
-          alert("出库失败: " + e.message);
-      }
   };
 
   const handleProductEditSave = async (data: any) => {
@@ -785,11 +775,23 @@ const Inventory = () => {
 
   return (
     <div className="space-y-6 animate-fade-in-up pb-20">
+      {/* POS Overlay Mode */}
+      {showPosMode && (
+          <PosOverlay 
+            items={posList}
+            onClose={() => setShowPosMode(false)}
+            onScan={handlePosScan}
+            onUpdateQty={(id, field, val) => setPosList(prev => prev.map(i => i.tempId === id ? {...i, [field]: val} : i))}
+            onRemove={(id) => setPosList(prev => prev.filter(i => i.tempId !== id))}
+            onSubmit={handlePosSubmit}
+            loading={posLoading}
+          />
+      )}
+
       {billingModal.open && <BillingModal {...billingModal} onClose={() => setBillingModal({ open: false })} onConfirm={handleBillingConfirm} />}
       {productEditModal.open && <ProductEditModal {...productEditModal} onClose={() => setProductEditModal({ open: false })} onSave={handleProductEditSave} />}
       {stocktakingModal.open && <StocktakingModal {...stocktakingModal} onClose={() => setStocktakingModal({ open: false })} onSave={handleStocktakingSave} />}
       {addBatchModal.open && <AddBatchModal {...addBatchModal} onClose={() => setAddBatchModal({ open: false })} onConfirm={handleAddBatch} />}
-      {showPOS && <POSModeOverlay onClose={() => setShowPOS(false)} currentStore={currentStore} products={isolatedProducts} onConfirm={handlePOSSubmit} />}
       {showScanner && <BarcodeScanner onScan={(val) => { setSearchTerm(val); setShowScanner(false); }} onClose={() => setShowScanner(false)} />}
       {lightboxSrc && <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
 
@@ -819,8 +821,9 @@ const Inventory = () => {
              </div>
              {!isParentView && (
                 <>
-                    <button onClick={() => setShowPOS(true)} className="px-4 py-2 bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 rounded-xl font-bold flex items-center gap-2 hover:bg-yellow-200 transition-colors shadow-lg shadow-yellow-600/20 whitespace-nowrap">
-                        <ShoppingCart className="w-4 h-4"/> 快速出库
+                    {/* New POS Mode Button */}
+                    <button onClick={() => setShowPosMode(true)} className="px-4 py-2 bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 rounded-xl font-bold flex items-center gap-2 hover:bg-yellow-200 transition-colors shadow-lg shadow-yellow-600/20 whitespace-nowrap">
+                        <Zap className="w-4 h-4"/> 快速出库
                     </button>
                     <button onClick={() => navigate('/import')} className="px-4 py-2 bg-blue-600 text-white rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/20 whitespace-nowrap"><Plus className="w-4 h-4"/> 导入新商品</button>
                 </>
