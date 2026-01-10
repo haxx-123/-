@@ -210,94 +210,31 @@ const OperationLogs = () => {
       return log.change_desc; 
   };
 
+  // 18.2 Rollback Functionality using DB RPC
   const handleUndo = async (log: OperationLog, e?: React.MouseEvent) => {
     if (e) { e.stopPropagation(); e.preventDefault(); }
     if (!canRevoke(log)) { alert("无权撤销此操作"); return; }
-    const confirmMsg = `撤销操作警告\n\n操作：${getActionLabel(log.action_type)}\n内容：${log.change_desc}\n确定要执行吗？`;
+    
+    const confirmMsg = `撤销操作警告\n\n操作：${getActionLabel(log.action_type)}\n内容：${log.change_desc}\n\n确定要撤销吗？这将尝试自动回滚库存变动。`;
     if (!window.confirm(confirmMsg)) return;
 
-    let rollbackSuccess = false;
-    let errorMessage = '';
-    let targetProductId = '';
-
     try {
-        let snap: any = {};
-        if (typeof log.snapshot_data === 'string') {
-            snap = JSON.parse(log.snapshot_data);
+        const { data, error } = await supabase.rpc('rollback_operation', { 
+            log_id: log.id 
+        });
+
+        if (error) throw error;
+
+        // data format returned by RPC: { success: boolean, message: string }
+        if (data && data.success) {
+            alert('撤销成功');
+            await reloadData();
         } else {
-            snap = log.snapshot_data || {};
+            alert(`撤销失败: ${data?.message || '未知错误'}`);
         }
-
-        const changeDelta = Number(log.change_delta) || 0; // Use numeric field
-
-        // 18.2.1 Inbound Rollback -> Decrease Stock
-        if (log.action_type === LogAction.ENTRY_INBOUND && snap.batchId) {
-             const { data: b } = await supabase.from('batches').select('*').eq('id', snap.batchId).single();
-             if(b) {
-                 const currentTotal = Number(b.total_quantity) || 0;
-                 if(currentTotal < changeDelta) {
-                     errorMessage = `库存不足，无法撤销 (当前: ${currentTotal}, 需扣除: ${changeDelta})`;
-                 } else {
-                     await supabase.from('batches').update({ total_quantity: currentTotal - changeDelta }).eq('id', snap.batchId);
-                     rollbackSuccess = true;
-                     targetProductId = b.product_id;
-                 }
-             } else { errorMessage = "批次已不存在"; }
-        }
-        // 18.2.2 Outbound Rollback -> Increase Stock
-        else if (log.action_type === LogAction.ENTRY_OUTBOUND && snap.batchId) {
-             const { data: b } = await supabase.from('batches').select('*').eq('id', snap.batchId).single();
-             if(b) {
-                 const currentTotal = Number(b.total_quantity) || 0;
-                 await supabase.from('batches').update({ total_quantity: currentTotal + changeDelta }).eq('id', snap.batchId);
-                 rollbackSuccess = true;
-                 targetProductId = b.product_id;
-             } else { errorMessage = "批次已不存在"; }
-        }
-        // 18.2.3 Adjust Rollback -> Restore Snapshot
-        else if (log.action_type === LogAction.ENTRY_ADJUST && snap.originalData) {
-             if (snap.type === 'batch') {
-                 await supabase.from('batches').update({
-                     total_quantity: snap.originalData.totalQuantity,
-                     batch_number: snap.originalData.batchNumber,
-                     expiry_date: snap.originalData.expiryDate,
-                     conversion_rate: snap.originalData.conversionRate
-                 }).eq('id', snap.originalData.id);
-                 rollbackSuccess = true;
-                 targetProductId = snap.originalData.productId;
-             }
-        }
-        // 18.2.4 Product Delete Rollback -> Re-insert
-        else if (log.action_type === LogAction.PRODUCT_DELETE && snap.originalProduct) {
-             const p = snap.originalProduct;
-             const { error: pErr } = await supabase.from('products').insert({
-                 id: p.id, store_id: p.storeId, name: p.name, category: p.category, sku: p.sku, 
-                 image_url: p.image_url, unit_big: p.unitBig, unit_small: p.unitSmall, 
-                 conversion_rate: p.conversionRate, notes: p.notes,
-                 quantity_big: p.quantityBig, quantity_small: p.quantitySmall // Restore
-             });
-             if(pErr) throw pErr;
-             rollbackSuccess = true;
-        }
-        // 18.2.5 Batch Import Rollback -> Delete Created Items
-        else if (log.action_type === LogAction.BATCH_IMPORT && snap.createdProductIds) {
-             await supabase.from('products').delete().in('id', snap.createdProductIds);
-             rollbackSuccess = true;
-        }
-
-        // --- Sync Trigger Call (Frontend) ---
-        if (rollbackSuccess && targetProductId) {
-            await syncProductStock(targetProductId);
-        }
-
-    } catch (err: any) { errorMessage = err.message; }
-
-    if (rollbackSuccess) {
-        await supabase.from('operation_logs').update({ is_revoked: true }).eq('id', log.id);
-        await reloadData();
-        alert("撤销成功");
-    } else {
-        alert(`撤销失败: ${errorMessage}`);
+    } catch (err: any) {
+        console.error("Rollback Error:", err);
+        alert('系统错误: ' + err.message);
     }
   };
 

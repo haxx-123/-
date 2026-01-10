@@ -1,10 +1,14 @@
 
 import { supabaseStorage } from '../supabase';
 
-const DIRECT_URL_ROOT = "https://jlaktbxhkftokfdyqdrmt.supabase.co";
+// Supabase Storage 官方直连域名
+const DIRECT_URL_ROOT = "https://jlakwbxkftokfdyqdrmt.supabase.co";
 
 export const getDirectImageUrl = (pathOrUrl: string | null | undefined) => {
   if (!pathOrUrl) return undefined;
+  
+  // 支持本地预览的 Blob/Data URL
+  if (pathOrUrl.startsWith('blob:') || pathOrUrl.startsWith('data:')) return pathOrUrl;
 
   // 如果已经是官方直连链接，直接返回
   if (pathOrUrl.startsWith(DIRECT_URL_ROOT)) return pathOrUrl;
@@ -15,7 +19,6 @@ export const getDirectImageUrl = (pathOrUrl: string | null | undefined) => {
   }
 
   // 如果只是相对路径/文件名 (例如 "prod_123.jpg")，生成官方公共链接
-  // 使用 supabaseStorage 实例确保生成的是官方域名的链接
   if (!pathOrUrl.startsWith('http')) {
       const { data } = supabaseStorage.storage.from('images').getPublicUrl(pathOrUrl);
       return data.publicUrl;

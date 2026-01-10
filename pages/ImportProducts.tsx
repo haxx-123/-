@@ -7,7 +7,6 @@ import * as XLSX from 'xlsx';
 import { useApp } from '../App';
 import { Product, Batch, RoleLevel, LogAction } from '../types';
 import { supabase, supabaseStorage, syncProductStock } from '../supabase';
-import { getDirectImageUrl } from '../utils/common';
 import imageCompression from 'browser-image-compression';
 
 // 6.2 Loading Button Component (Local Definition)
@@ -289,6 +288,7 @@ const ImportProducts = () => {
   };
 
   // 17.1 Logic Flow Implementation
+  // Task 3: Updated to return batchId so we can log it for rollback
   const executeImportLogic = async (data: ImportData, resolveMode: 'update' | 'keep' | null) => {
       // Data Cleaning & Type Enforcement
       const safeData = {
@@ -365,8 +365,10 @@ const ImportProducts = () => {
       
       // Calculate Total Quantity correctly: (Big * Rate) + Small
       const importTotal = (safeData.quantityBig * safeData.conversionRate) + safeData.quantitySmall;
+      let targetBatchId = '';
 
       if (existingBatch) {
+          targetBatchId = existingBatch.id;
           // Replenish
           if (safeData.expiryDate && existingBatch.expiry_date && safeData.expiryDate !== existingBatch.expiry_date) {
               return { status: 'error', message: `Expiry Conflict! Existing: ${existingBatch.expiry_date}` };
@@ -377,8 +379,9 @@ const ImportProducts = () => {
           if (error) return { status: 'error', message: 'Batch Update Failed' };
       } else {
           // New Batch
+          targetBatchId = `b_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
           const { error } = await supabase.from('batches').insert({ 
-              id: `b_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`, 
+              id: targetBatchId, 
               product_id: productId, 
               batch_number: safeData.batchNumber, 
               expiry_date: safeData.expiryDate, 
@@ -395,7 +398,7 @@ const ImportProducts = () => {
           await syncProductStock(productId);
       }
 
-      return { status: 'success', productId: isNewProduct ? productId : null };
+      return { status: 'success', productId: isNewProduct ? productId : null, batchId: targetBatchId };
   };
 
   // --- Manual Import Handlers ---
@@ -417,7 +420,18 @@ const ImportProducts = () => {
           } else if (res.status === 'error') {
               alert(`失败: ${res.message}`);
           } else {
-              await supabase.from('operation_logs').insert({ id: `log_${Date.now()}`, action_type: LogAction.ENTRY_INBOUND, target_id: res.productId || 'manual', target_name: manualForm.name, change_desc: `[手动入库]: ${manualForm.name} × ${manualForm.quantityBig}${manualForm.unitBig}${manualForm.quantitySmall}${manualForm.unitSmall}`, operator_id: user?.id, operator_name: user?.username, role_level: user?.role, snapshot_data: {}, created_at: new Date().toISOString() });
+              await supabase.from('operation_logs').insert({ 
+                  id: `log_${Date.now()}`, 
+                  action_type: LogAction.ENTRY_INBOUND, 
+                  target_id: res.productId || res.batchId || 'manual', 
+                  target_name: manualForm.name, 
+                  change_desc: `[手动入库]: ${manualForm.name} × ${manualForm.quantityBig}${manualForm.unitBig}${manualForm.quantitySmall}${manualForm.unitSmall}`, 
+                  operator_id: user?.id, 
+                  operator_name: user?.username, 
+                  role_level: user?.role, 
+                  snapshot_data: { batchId: res.batchId }, // Task 3: Save batchId in snapshot
+                  created_at: new Date().toISOString() 
+              });
               alert('入库成功');
               setManualForm(DEFAULT_IMPORT);
               setPreviewImage(null);
@@ -454,7 +468,7 @@ const ImportProducts = () => {
             conversionRate: existingProduct.conversion_rate || 10,
             image_url: existingProduct.image_url
         }));
-        setPreviewImage(getDirectImageUrl(existingProduct.image_url) || null);
+        setPreviewImage(existingProduct.image_url || null);
         // Focus Batch Number Input
         setTimeout(() => batchInputRef.current?.focus(), 100);
     } else {
@@ -498,6 +512,7 @@ const ImportProducts = () => {
       setShowExcelConfig(false);
       let success = 0;
       const errors: any[] = [];
+      const createdBatchIds: string[] = []; // Task 3: Track created IDs
 
       for (const row of excelData) {
           const name = String(row[mapping.name] || '').trim();
@@ -524,7 +539,10 @@ const ImportProducts = () => {
           };
 
           const res = await executeImportLogic(importData, 'keep');
-          if (res.status === 'success') success++;
+          if (res.status === 'success') {
+              success++;
+              if (res.batchId) createdBatchIds.push(res.batchId);
+          }
           else errors.push({ ...row, _reason: res.message });
       }
 
@@ -536,7 +554,19 @@ const ImportProducts = () => {
       }
 
       if (success > 0) {
-          await supabase.from('operation_logs').insert({ id: `log_${Date.now()}`, action_type: LogAction.BATCH_IMPORT, target_id: 'batch', target_name: 'Excel Import', change_desc: `[批量导入]: 成功 ${success} 条`, operator_id: user?.id, operator_name: user?.username, role_level: user?.role, snapshot_data: { count: success }, created_at: new Date().toISOString() });
+          // Task 3: Log with imported_batch_ids
+          await supabase.from('operation_logs').insert({ 
+              id: `log_${Date.now()}`, 
+              action_type: LogAction.BATCH_IMPORT, 
+              target_id: 'batch', 
+              target_name: 'Excel Import', 
+              change_desc: `[批量导入]: 成功 ${success} 条`, 
+              operator_id: user?.id, 
+              operator_name: user?.username, 
+              role_level: user?.role, 
+              snapshot_data: { count: success, imported_batch_ids: createdBatchIds }, 
+              created_at: new Date().toISOString() 
+            });
           await reloadData();
       }
       

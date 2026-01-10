@@ -146,7 +146,7 @@ const PosOverlay = ({
                                 <button onClick={() => onRemove(item.tempId)} className="p-2 text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4"/></button>
                                 <div className="flex-1 min-w-0">
                                     <div className="font-bold text-sm truncate text-gray-800 dark:text-gray-200">{item.product.name}</div>
-                                    <div className="text-[10px] text-gray-500 font-mono truncate">{item.product.sku}</div>
+                                    <div className="text-xs text-gray-500 font-mono truncate">{item.product.sku}</div>
                                 </div>
                                 {/* Qty Inputs */}
                                 <div className="flex items-center gap-1 shrink-0">
@@ -354,6 +354,7 @@ const BillingModal = ({ batch, product, onClose, onConfirm }: any) => {
 const ProductEditModal = ({ product, onClose, onSave }: any) => {
     const [form, setForm] = useState({...product});
     const [loading, setLoading] = useState(false);
+    // Use getDirectImageUrl for initial display
     const [previewImage, setPreviewImage] = useState<string | null>(getDirectImageUrl(product.image_url) || null);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -361,7 +362,7 @@ const ProductEditModal = ({ product, onClose, onSave }: any) => {
     const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             const file = e.target.files[0];
-            setSelectedFile(file); // Store file for upload on save
+            setSelectedFile(file); // Store file for deferred upload
             setPreviewImage(URL.createObjectURL(file)); // Show local preview
         }
     };
@@ -370,15 +371,19 @@ const ProductEditModal = ({ product, onClose, onSave }: any) => {
         setLoading(true);
         try {
             let finalImageUrl = form.image_url;
+            let oldImageUrl = product.image_url; // Original image URL before edit
 
-            // 1. Upload new image if selected
+            // 1. Upload new image if selected (Deferred Upload Strategy)
             if (selectedFile) {
                 const options = { maxSizeMB: 0.2, maxWidthOrHeight: 1024, useWebWorker: true };
                 const compressedFile = await imageCompression(selectedFile, options);
                 const fileName = `prod_${Date.now()}_${Math.random().toString(36).substr(2, 5)}.jpg`;
                 
+                // IMPORTANT: Explicitly convert to Blob to avoid 'Failed to fetch' error with Supabase JS v2
+                const fileBody = new File([compressedFile], fileName, { type: 'image/jpeg' });
+
                 // Upload via direct storage client
-                const { error: uploadError } = await supabaseStorage.storage.from('images').upload(fileName, compressedFile, {
+                const { error: uploadError } = await supabaseStorage.storage.from('images').upload(fileName, fileBody, {
                     contentType: 'image/jpeg',
                     upsert: false
                 });
@@ -388,20 +393,22 @@ const ProductEditModal = ({ product, onClose, onSave }: any) => {
                 // Get new public URL
                 const { data: publicData } = supabaseStorage.storage.from('images').getPublicUrl(fileName);
                 finalImageUrl = publicData.publicUrl;
-
-                // 2. Delete old image if exists and is not the same as new one
-                if (form.image_url && form.image_url !== finalImageUrl) {
-                    const oldUrl = form.image_url;
-                    const oldFileName = oldUrl.split('/').pop();
-                    // Safety check: ensure it looks like a generated filename
-                    if (oldFileName && oldFileName.includes('prod_')) {
-                        await supabaseStorage.storage.from('images').remove([oldFileName]);
-                    }
-                }
             }
 
-            // 3. Update product with new image URL
+            // 2. Update product with new image URL
             await onSave({ ...form, image_url: finalImageUrl });
+
+            // 3. Cleanup old image (Only if new one uploaded successfully and different)
+            if (selectedFile && oldImageUrl && oldImageUrl !== finalImageUrl) {
+                const oldName = oldImageUrl.split('/').pop();
+                // Safety check: ensure it looks like a generated filename and is from our storage
+                if (oldName && (oldImageUrl.includes('supabase.co') || oldImageUrl.includes('stockwise.art'))) {
+                    // Fire and forget cleanup to speed up UI
+                    supabaseStorage.storage.from('images').remove([oldName]).then(({ error }) => {
+                        if (error) console.warn("Old image cleanup warning:", error);
+                    });
+                }
+            }
             
         } catch (err: any) {
             console.error("Save failed:", err);
@@ -761,6 +768,8 @@ const Inventory = () => {
       setBillingModal({ open: false });
       
       try {
+          // Task 2: Ensure correct snapshot data for billing logs
+          // We capture currentTotal as old_stock BEFORE update
           const { error } = await supabase.from('batches').update({ total_quantity: newTotal }).eq('id', batch.id);
           if (error) throw error;
           const logDesc = `[${type === 'in' ? '入库' : (isQuick ? '快速出库' : '出库')}]: ${product.name} × ${detail.big}${product.unitBig}${detail.small}${product.unitSmall}`;
@@ -787,8 +796,20 @@ const Inventory = () => {
   const handleStocktakingSave = async (data: any) => {
       const { batch, product } = stocktakingModal;
       try {
+          // Task 2: Ensure full batch object is saved in snapshot for ADJUST rollback
           await supabase.from('batches').update({ batch_number: data.batchNumber, total_quantity: data.totalQuantity, conversion_rate: data.conversionRate, expiry_date: data.expiryDate || null, notes: data.notes }).eq('id', batch.id);
-          await supabase.from('operation_logs').insert({ id: `log_${Date.now()}`, action_type: LogAction.ENTRY_ADJUST, target_id: batch.id, target_name: product.name, change_desc: `[库存调整]: ${product.name}`, operator_id: user?.id, operator_name: user?.username, role_level: user?.role, snapshot_data: { type: 'batch_edit', originalData: batch, newData: data }, created_at: new Date().toISOString() });
+          await supabase.from('operation_logs').insert({ 
+              id: `log_${Date.now()}`, 
+              action_type: LogAction.ENTRY_ADJUST, 
+              target_id: batch.id, 
+              target_name: product.name, 
+              change_desc: `[库存调整]: ${product.name}`, 
+              operator_id: user?.id, 
+              operator_name: user?.username, 
+              role_level: user?.role, 
+              snapshot_data: { type: 'batch', originalData: batch, newData: data }, 
+              created_at: new Date().toISOString() 
+            });
           await syncProductStock(product.id); await reloadData(); setStocktakingModal({ open: false });
       } catch (err: any) { alert('操作失败: ' + err.message); }
   };
@@ -802,7 +823,56 @@ const Inventory = () => {
   };
 
   const toggleSelectProduct = (id: string) => { const newSet = new Set(selectedProducts); if (newSet.has(id)) newSet.delete(id); else newSet.add(id); setSelectedProducts(newSet); };
-  const handleBatchDelete = async () => { if (selectedProducts.size === 0) return; if (!window.confirm(`确定删除?`)) return; await supabase.from('products').delete().in('id', Array.from(selectedProducts)); await reloadData(); setIsDeleteMode(false); setSelectedProducts(new Set()); };
+  
+  // Task 2: Update Product Deletion Logic to fetch data before delete and record full snapshot
+  const handleBatchDelete = async () => { 
+      if (selectedProducts.size === 0) return; 
+      if (!window.confirm(`确定删除?`)) return; 
+
+      try {
+          // 1. Fetch products to be deleted
+          const { data: productsToDelete, error: fetchError } = await supabase
+              .from('products')
+              .select('*')
+              .in('id', Array.from(selectedProducts));
+          
+          if (fetchError || !productsToDelete || productsToDelete.length === 0) {
+              alert("获取商品信息失败或商品已不存在");
+              return;
+          }
+
+          // 2. Delete products (Cascading delete on batches usually handled by DB, but we delete products)
+          const { error: deleteError } = await supabase.from('products').delete().in('id', Array.from(selectedProducts));
+          
+          if (deleteError) {
+              throw deleteError;
+          }
+
+          // 3. Log each deletion with full snapshot
+          const logEntries = productsToDelete.map(p => ({
+              id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+              action_type: LogAction.PRODUCT_DELETE,
+              target_id: p.id,
+              target_name: p.name,
+              change_desc: `[商品删除]: ${p.name}`,
+              operator_id: user?.id,
+              operator_name: user?.username,
+              role_level: user?.role,
+              snapshot_data: { originalProduct: p }, // Full object for restore
+              created_at: new Date().toISOString()
+          }));
+
+          const { error: logError } = await supabase.from('operation_logs').insert(logEntries);
+          if (logError) console.error("Failed to log deletion", logError);
+
+          await reloadData(); 
+          setIsDeleteMode(false); 
+          setSelectedProducts(new Set()); 
+      } catch (err: any) {
+          alert(`删除失败: ${err.message}`);
+      }
+  };
+
   const toggleSelectAll = () => { if (selectedProducts.size === paginatedProducts.length) setSelectedProducts(new Set()); else setSelectedProducts(new Set(paginatedProducts.map(p => p.id))); };
   const toggleExpand = (id: string) => { const next = new Set(expandedProducts); if (next.has(id)) next.delete(id); else next.add(id); setExpandedProducts(next); };
 
@@ -904,8 +974,8 @@ const Inventory = () => {
                                          </td>
                                          <td className="p-4">
                                              <div className="flex items-center gap-3">
-                                                 <div className="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center overflow-hidden border dark:border-gray-600 cursor-pointer" onClick={() => product.image_url && setLightboxSrc(product.image_url)}>
-                                                     {product.image_url ? <img src={getDirectImageUrl(product.image_url)} className="w-full h-full object-cover"/> : <Package className="w-5 h-5 text-gray-400"/>}
+                                                 <div className="w-12 h-12 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center overflow-hidden border dark:border-gray-600 cursor-pointer shadow-sm hover:shadow-md transition-shadow" onClick={() => product.image_url && setLightboxSrc(getDirectImageUrl(product.image_url)!)}>
+                                                     {product.image_url ? <img src={getDirectImageUrl(product.image_url)} className="w-full h-full object-cover" alt={product.name}/> : <Package className="w-6 h-6 text-gray-400"/>}
                                                  </div>
                                                  <div>
                                                      <div className="font-bold text-gray-800 dark:text-gray-200">{product.name}</div>
