@@ -27,7 +27,7 @@ const LoadingButton = ({ onClick, loading, children, className, disabled }: any)
     </button>
 );
 
-// 13. 分页功能组件
+// 13. 分页功能组件 (Updated)
 const Pagination = ({ current, total, pageSize, onChange }: { current: number, total: number, pageSize: number, onChange: (p: number) => void }) => {
     const totalPages = Math.ceil(total / pageSize);
     const [inputVal, setInputVal] = useState(current.toString());
@@ -46,21 +46,34 @@ const Pagination = ({ current, total, pageSize, onChange }: { current: number, t
     if (totalPages <= 1) return null;
 
     return (
-        <div className="flex items-center justify-center gap-2 mt-6 pt-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
-            <button onClick={() => onChange(Math.max(1, current - 1))} disabled={current === 1} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed bg-white dark:bg-gray-800 shadow-sm border border-gray-200 dark:border-gray-700"><ChevronLeft className="w-5 h-5"/></button>
-            <div className="flex items-center gap-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-2 py-1 shadow-sm">
-                <span style={{ color: 'var(--text-secondary)' }} className="text-sm">第</span>
+        <div className="flex items-center justify-center gap-2 mt-4 select-none">
+            <button 
+                onClick={() => onChange(Math.max(1, current - 1))} 
+                disabled={current === 1} 
+                className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 text-gray-600 dark:text-gray-400 transition-colors"
+            >
+                <ChevronLeft className="w-5 h-5"/>
+            </button>
+            
+            <div className="flex items-center gap-2 bg-white dark:bg-gray-800 px-3 py-1 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
                 <input 
-                    className="w-8 bg-transparent text-center outline-none text-sm font-bold" 
-                    style={{ color: 'var(--text-primary)' }}
+                    className="w-8 text-center bg-transparent outline-none font-bold text-gray-700 dark:text-gray-200 text-sm" 
                     value={inputVal} 
                     onChange={(e) => setInputVal(e.target.value)}
                     onBlur={handleBlur}
                     onKeyDown={(e) => e.key === 'Enter' && handleBlur()}
                 />
-                <span style={{ color: 'var(--text-secondary)' }} className="text-sm">/ {totalPages} 页</span>
+                <span className="text-gray-400">/</span>
+                <span className="text-gray-500 dark:text-gray-400 text-sm">{totalPages}</span>
             </div>
-            <button onClick={() => onChange(Math.min(totalPages, current + 1))} disabled={current === totalPages} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed bg-white dark:bg-gray-800 shadow-sm border border-gray-200 dark:border-gray-700"><ChevronRight className="w-5 h-5"/></button>
+
+            <button 
+                onClick={() => onChange(Math.min(totalPages, current + 1))} 
+                disabled={current === totalPages} 
+                className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 text-gray-600 dark:text-gray-400 transition-colors"
+            >
+                <ChevronRight className="w-5 h-5"/>
+            </button>
         </div>
     );
 };
@@ -352,6 +365,7 @@ const BillingModal = ({ batch, product, onClose, onConfirm }: any) => {
 };
 
 const ProductEditModal = ({ product, onClose, onSave }: any) => {
+    const { user } = useApp(); // Need user info for logging
     const [form, setForm] = useState({...product});
     const [loading, setLoading] = useState(false);
     // Use getDirectImageUrl for initial display
@@ -395,10 +409,47 @@ const ProductEditModal = ({ product, onClose, onSave }: any) => {
                 finalImageUrl = publicData.publicUrl;
             }
 
-            // 2. Update product with new image URL
-            await onSave({ ...form, image_url: finalImageUrl });
+            // 2. Diff Logic for Logging
+            const changes = [];
+            const oldP = product;
+            const newP = { ...form, image_url: finalImageUrl };
 
-            // 3. Cleanup old image (Only if new one uploaded successfully and different)
+            if (oldP.name !== newP.name) changes.push(`名称: ${oldP.name}→${newP.name}`);
+            if (oldP.sku !== newP.sku) changes.push(`SKU: ${oldP.sku}→${newP.sku}`);
+            if (oldP.category !== newP.category) changes.push(`分类: ${oldP.category}→${newP.category}`);
+            if (oldP.unitBig !== newP.unitBig) changes.push(`大单位: ${oldP.unitBig}→${newP.unitBig}`);
+            if (oldP.unitSmall !== newP.unitSmall) changes.push(`小单位: ${oldP.unitSmall}→${newP.unitSmall}`);
+            if (Number(oldP.conversionRate) !== Number(newP.conversionRate)) changes.push(`换算: ${oldP.conversionRate}→${newP.conversionRate}`);
+            if (selectedFile) changes.push(`更新了商品图片`);
+            if (oldP.notes !== newP.notes) changes.push(`更新了备注`);
+
+            // Only update and log if there are changes
+            if (changes.length > 0) {
+                // 3. Update product with new image URL
+                await onSave(newP);
+
+                // 4. Log as ENTRY_ADJUST (User requested type mapping)
+                const changeDesc = `[档案修改]: ${changes.join(' | ')}`;
+                await supabase.from('operation_logs').insert({
+                    id: `log_${Date.now()}`,
+                    action_type: LogAction.ENTRY_ADJUST,
+                    target_id: product.id,
+                    target_name: product.name,
+                    change_desc: changeDesc,
+                    operator_id: user?.id,
+                    operator_name: user?.username,
+                    role_level: user?.role,
+                    snapshot_data: { 
+                        type: 'product_edit', 
+                        originalProduct: product, 
+                        newData: newP,
+                        changes: changes 
+                    },
+                    created_at: new Date().toISOString()
+                });
+            }
+
+            // 5. Cleanup old image (Only if new one uploaded successfully and different)
             if (selectedFile && oldImageUrl && oldImageUrl !== finalImageUrl) {
                 const oldName = oldImageUrl.split('/').pop();
                 // Safety check: ensure it looks like a generated filename and is from our storage

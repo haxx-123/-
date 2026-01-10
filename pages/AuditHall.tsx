@@ -111,24 +111,52 @@ const LoginHistoryModal = ({ deviceName, records, onClose }: { deviceName: strin
 const Pagination = ({ current, total, pageSize, onChange }: { current: number, total: number, pageSize: number, onChange: (p: number) => void }) => {
     const totalPages = Math.ceil(total / pageSize);
     const [inputVal, setInputVal] = useState(current.toString());
+
     useEffect(() => setInputVal(current.toString()), [current]);
+
     const handleBlur = () => {
         let val = parseInt(inputVal);
-        if (isNaN(val)) val = 1; if (val < 1) val = 1; if (val > totalPages) val = totalPages;
-        onChange(val); setInputVal(val.toString());
+        if (isNaN(val)) val = 1;
+        if (val < 1) val = 1;
+        if (val > totalPages) val = totalPages;
+        onChange(val);
+        setInputVal(val.toString());
     };
+
     if (totalPages <= 1) return null;
+
     return (
-        <div className="flex items-center justify-end gap-2 mt-4 pt-2 border-t dark:border-gray-700">
-            <button onClick={() => onChange(Math.max(1, current - 1))} disabled={current === 1} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"><ChevronLeft className="w-4 h-4"/></button>
-            <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700 rounded px-2 py-0.5">
-                <input className="w-6 bg-transparent text-center outline-none text-xs font-bold" value={inputVal} onChange={(e) => setInputVal(e.target.value)} onBlur={handleBlur} onKeyDown={(e) => e.key === 'Enter' && handleBlur()}/>
-                <span className="text-gray-500 text-xs">/ {totalPages}</span>
+        <div className="flex items-center justify-center gap-2 mt-4 select-none">
+            <button 
+                onClick={() => onChange(Math.max(1, current - 1))} 
+                disabled={current === 1} 
+                className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 text-gray-600 dark:text-gray-400 transition-colors"
+            >
+                <ChevronLeft className="w-5 h-5"/>
+            </button>
+            
+            <div className="flex items-center gap-2 bg-white dark:bg-gray-800 px-3 py-1 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+                <input 
+                    className="w-8 text-center bg-transparent outline-none font-bold text-gray-700 dark:text-gray-200 text-sm" 
+                    value={inputVal} 
+                    onChange={(e) => setInputVal(e.target.value)}
+                    onBlur={handleBlur}
+                    onKeyDown={(e) => e.key === 'Enter' && handleBlur()}
+                />
+                <span className="text-gray-400">/</span>
+                <span className="text-gray-500 dark:text-gray-400 text-sm">{totalPages}</span>
             </div>
-            <button onClick={() => onChange(Math.min(totalPages, current + 1))} disabled={current === totalPages} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"><ChevronRight className="w-4 h-4"/></button>
+
+            <button 
+                onClick={() => onChange(Math.min(totalPages, current + 1))} 
+                disabled={current === totalPages} 
+                className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 text-gray-600 dark:text-gray-400 transition-colors"
+            >
+                <ChevronRight className="w-5 h-5"/>
+            </button>
         </div>
     );
-}
+};
 
 const AuditHall = () => {
   const { setPageActions, loginRecords, logs, users, user } = useApp();

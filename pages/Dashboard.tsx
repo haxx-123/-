@@ -1,7 +1,7 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../App';
-import { AlertTriangle, Clock, Settings, X, TrendingUp, BarChart2, Calendar, Copy, FileSpreadsheet, Crop } from 'lucide-react';
+import { AlertTriangle, Clock, Settings, X, TrendingUp, BarChart2, Calendar, Copy, FileSpreadsheet, Crop, ChevronLeft, ChevronRight } from 'lucide-react';
 import { LogAction } from '../types';
 import html2canvas from 'html2canvas';
 import * as XLSX from 'xlsx';
@@ -121,9 +121,65 @@ const SimpleLineChart = ({ data }: { data: { day: string; in: number; out: numbe
   );
 };
 
+// --- Pagination Component ---
+const Pagination = ({ current, total, pageSize, onChange }: { current: number, total: number, pageSize: number, onChange: (p: number) => void }) => {
+    const totalPages = Math.ceil(total / pageSize);
+    const [inputVal, setInputVal] = useState(current.toString());
+
+    useEffect(() => setInputVal(current.toString()), [current]);
+
+    const handleBlur = () => {
+        let val = parseInt(inputVal);
+        if (isNaN(val)) val = 1;
+        if (val < 1) val = 1;
+        if (val > totalPages) val = totalPages;
+        onChange(val);
+        setInputVal(val.toString());
+    };
+
+    if (totalPages <= 1) return null;
+
+    return (
+        <div className="flex items-center justify-center gap-2 mt-4 select-none">
+            <button 
+                onClick={() => onChange(Math.max(1, current - 1))} 
+                disabled={current === 1} 
+                className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 text-gray-600 dark:text-gray-400 transition-colors"
+            >
+                <ChevronLeft className="w-5 h-5"/>
+            </button>
+            
+            <div className="flex items-center gap-2 bg-white dark:bg-gray-800 px-3 py-1 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+                <input 
+                    className="w-8 text-center bg-transparent outline-none font-bold text-gray-700 dark:text-gray-200 text-sm" 
+                    value={inputVal} 
+                    onChange={(e) => setInputVal(e.target.value)}
+                    onBlur={handleBlur}
+                    onKeyDown={(e) => e.key === 'Enter' && handleBlur()}
+                />
+                <span className="text-gray-400">/</span>
+                <span className="text-gray-500 dark:text-gray-400 text-sm">{totalPages}</span>
+            </div>
+
+            <button 
+                onClick={() => onChange(Math.min(totalPages, current + 1))} 
+                disabled={current === totalPages} 
+                className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 text-gray-600 dark:text-gray-400 transition-colors"
+            >
+                <ChevronRight className="w-5 h-5"/>
+            </button>
+        </div>
+    );
+};
+
 // --- Modals ---
 
 const AlertListModal = ({ title, items, onClose }: { title: string; items: any[]; onClose: () => void }) => {
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+  
+  const paginatedItems = items.slice((page - 1) * pageSize, page * pageSize);
+
   const handleCopy = () => {
       const text = items.map(i => `${i.name} | ${i.detail} | ${i.value}`).join('\n');
       navigator.clipboard.writeText(text).then(() => alert('清单内容已复制'));
@@ -158,7 +214,7 @@ const AlertListModal = ({ title, items, onClose }: { title: string; items: any[]
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm animate-fade-in p-4">
-        <div id="alert-modal-content" className="bg-white dark:bg-gray-800 w-full max-w-md rounded-2xl shadow-2xl p-6 relative flex flex-col max-h-[80vh]">
+        <div id="alert-modal-content" className="bg-white dark:bg-gray-800 w-full max-w-md rounded-2xl shadow-2xl p-6 relative flex flex-col max-h-[85vh]">
             <div className="flex justify-between items-center mb-4 shrink-0 gap-2">
                 <h3 className="text-xl font-bold flex items-center gap-2 truncate text-gray-800 dark:text-white">
                     {title.includes('过期') ? <Clock className="text-yellow-600 shrink-0"/> : <AlertTriangle className="text-red-600 shrink-0"/>}
@@ -173,9 +229,9 @@ const AlertListModal = ({ title, items, onClose }: { title: string; items: any[]
                 </div>
             </div>
             
-            <div className="space-y-3 overflow-y-auto p-1">
-                {items.length === 0 ? <p className="text-gray-400 text-center py-4">无相关数据</p> : 
-                    items.map((item, i) => (
+            <div className="space-y-3 overflow-y-auto p-1 min-h-[300px]">
+                {paginatedItems.length === 0 ? <p className="text-gray-400 text-center py-4">无相关数据</p> : 
+                    paginatedItems.map((item, i) => (
                     <div key={i} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700 rounded-xl border border-gray-100 dark:border-gray-600">
                         <div className="min-w-0 pr-2">
                             <div className="font-bold truncate text-gray-800 dark:text-gray-200">{item.name}</div>
@@ -186,6 +242,8 @@ const AlertListModal = ({ title, items, onClose }: { title: string; items: any[]
                     ))
                 }
             </div>
+            
+            <Pagination current={page} total={items.length} pageSize={pageSize} onChange={setPage} />
         </div>
     </div>
   );
