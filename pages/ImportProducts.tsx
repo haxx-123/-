@@ -7,6 +7,7 @@ import * as XLSX from 'xlsx';
 import { useApp } from '../App';
 import { Product, Batch, RoleLevel, LogAction } from '../types';
 import { supabase, supabaseStorage, syncProductStock } from '../supabase';
+import { getDirectImageUrl } from '../utils/common';
 import imageCompression from 'browser-image-compression';
 
 // 6.2 Loading Button Component (Local Definition)
@@ -453,7 +454,7 @@ const ImportProducts = () => {
             conversionRate: existingProduct.conversion_rate || 10,
             image_url: existingProduct.image_url
         }));
-        setPreviewImage(existingProduct.image_url || null);
+        setPreviewImage(getDirectImageUrl(existingProduct.image_url) || null);
         // Focus Batch Number Input
         setTimeout(() => batchInputRef.current?.focus(), 100);
     } else {

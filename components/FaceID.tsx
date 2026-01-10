@@ -1,12 +1,19 @@
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Camera, CheckCircle, AlertTriangle, UserX, Sun, ScanFace, Activity } from 'lucide-react';
+import { Camera, CheckCircle, AlertTriangle, UserX, Sun, ScanFace, Activity, Search } from 'lucide-react';
+
+interface Candidate {
+    id: string;
+    username: string;
+    descriptor: number[];
+}
 
 interface FaceIDProps {
-  onSuccess: (descriptor?: number[]) => void;
+  onSuccess: (result?: any) => void;
   onCancel: () => void;
-  storedFaceData?: number[]; // Expecting float array descriptor
-  mode?: 'register' | 'verify'; 
+  storedFaceData?: number[]; // For 1:1 Verify
+  candidates?: Candidate[];  // For 1:N Identify
+  mode?: 'register' | 'verify' | 'identify'; 
 }
 
 declare global {
@@ -28,7 +35,7 @@ const CONFIG = {
     VERIFY_THRESHOLD: 0.6, // 欧氏距离阈值 (越小越相似，0.6是标准分界线)
 };
 
-const FaceID: React.FC<FaceIDProps> = ({ onSuccess, onCancel, storedFaceData, mode = 'verify' }) => {
+const FaceID: React.FC<FaceIDProps> = ({ onSuccess, onCancel, storedFaceData, candidates, mode = 'verify' }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
@@ -37,7 +44,7 @@ const FaceID: React.FC<FaceIDProps> = ({ onSuccess, onCancel, storedFaceData, mo
   const [feedback, setFeedback] = useState<string>('初始化模型...');
   
   // 实时数据反馈
-  const [debugInfo, setDebugInfo] = useState<{distance?: number, brightness?: number, score?: number}>({});
+  const [debugInfo, setDebugInfo] = useState<{distance?: number, brightness?: number, score?: number, matchName?: string}>({});
   
   // 录入防抖累加器
   const stabilityCounter = useRef<number>(0);
@@ -98,7 +105,9 @@ const FaceID: React.FC<FaceIDProps> = ({ onSuccess, onCancel, storedFaceData, mo
         videoRef.current.srcObject = stream;
       }
       setStatus('scanning');
-      setFeedback(mode === 'register' ? '请正对屏幕，保持光线充足' : '正在验证身份...');
+      if (mode === 'register') setFeedback('请正对屏幕，保持光线充足');
+      else if (mode === 'identify') setFeedback('正在识别身份...');
+      else setFeedback('正在验证身份...');
     } catch (err) {
       setStatus('error');
       setFeedback('无法访问摄像头，请检查权限');
@@ -155,7 +164,6 @@ const FaceID: React.FC<FaceIDProps> = ({ onSuccess, onCancel, storedFaceData, mo
           ctx.clearRect(0, 0, displaySize.width, displaySize.height);
 
           // 2. Draw Video frame to canvas for brightness check (Hidden analysis)
-          // 为了性能，我们只在需要时才完整绘制，或者直接利用 video 元素进行检测，这里为了亮度检测需要像素数据
           ctx.drawImage(videoRef.current, 0, 0, displaySize.width, displaySize.height);
           const currentBrightness = checkBrightness(ctx, displaySize.width, displaySize.height);
           
@@ -170,7 +178,7 @@ const FaceID: React.FC<FaceIDProps> = ({ onSuccess, onCancel, storedFaceData, mo
 
               // Draw Box
               const drawBox = new window.faceapi.draw.DrawBox(box, { 
-                  label: mode === 'register' ? `Q: ${(score*100).toFixed(0)}%` : 'Face', 
+                  label: mode === 'register' ? `Q: ${(score*100).toFixed(0)}%` : (mode === 'identify' ? 'Identifying...' : 'Face'), 
                   boxColor: status === 'success' ? 'green' : 'blue' 
               });
               drawBox.draw(canvasRef.current);
@@ -185,26 +193,22 @@ const FaceID: React.FC<FaceIDProps> = ({ onSuccess, onCancel, storedFaceData, mo
                       stabilityCounter.current = 0;
                       return;
                   }
-                  
                   // 2. 尺寸检查 (太远)
                   if (faceRatio < CONFIG.REG_MIN_FACE_RATIO) {
                       setFeedback("请靠近一点");
                       stabilityCounter.current = 0;
                       return;
                   }
-
                   // 3. 分数门禁
                   if (score < CONFIG.REG_MIN_SCORE) {
                       setFeedback("请保持头部静止，正对屏幕");
                       stabilityCounter.current = 0;
                       return;
                   }
-
                   // 4. 防抖与优选 (连续 N 帧合格)
                   stabilityCounter.current += 1;
                   setFeedback(`正在录入... ${stabilityCounter.current}/${CONFIG.REG_STABILITY_FRAMES}`);
                   
-                  // Keep the best descriptor seen so far in this stability sequence
                   if (!bestDescriptorRef.current || score > bestDescriptorRef.current.score) {
                       bestDescriptorRef.current = { score, data: detection.descriptor };
                   }
@@ -213,12 +217,11 @@ const FaceID: React.FC<FaceIDProps> = ({ onSuccess, onCancel, storedFaceData, mo
                       stopCamera();
                       setStatus('success');
                       setFeedback("录入成功！");
-                      // Convert Float32Array to number[] for storage
                       const finalDescriptor = Array.from(bestDescriptorRef.current?.data || detection.descriptor) as number[];
                       onSuccess(finalDescriptor);
                   }
               } 
-              // === 任务二：验证模式 - 算法调优 ===
+              // === 任务二：验证模式 (1:1) ===
               else if (mode === 'verify') {
                   if (!storedFaceData || storedFaceData.length === 0) {
                       stopCamera();
@@ -226,25 +229,48 @@ const FaceID: React.FC<FaceIDProps> = ({ onSuccess, onCancel, storedFaceData, mo
                       setFeedback('该账号未录入人脸数据');
                       return;
                   }
-
-                  // 格式转换 (Array -> Float32Array)
                   const storedDescriptor = new Float32Array(storedFaceData);
-                  
-                  // 计算欧氏距离 (越小越相似)
                   const distance = window.faceapi.euclideanDistance(detection.descriptor, storedDescriptor);
-                  
                   setDebugInfo(prev => ({ ...prev, distance }));
 
-                  // 判定逻辑: < 0.6 为通过
                   if (distance < CONFIG.VERIFY_THRESHOLD) {
                       stopCamera();
                       setStatus('success');
                       setFeedback("验证通过");
                       setTimeout(() => onSuccess(), 800);
                   } else {
-                      // 距离较远，给用户反馈
                       if (distance > 0.8) setFeedback("不是同一个人");
                       else setFeedback("请调整角度或靠近一点");
+                  }
+              }
+              // === 新增：识别模式 (1:N) ===
+              else if (mode === 'identify') {
+                  if (!candidates || candidates.length === 0) {
+                      setStatus('error');
+                      setFeedback('无可用的人脸库数据');
+                      return;
+                  }
+
+                  let bestMatch = { distance: 1.0, id: '', username: '' };
+                  
+                  // Simple Linear Search
+                  for (const candidate of candidates) {
+                      const stored = new Float32Array(candidate.descriptor);
+                      const dist = window.faceapi.euclideanDistance(detection.descriptor, stored);
+                      if (dist < bestMatch.distance) {
+                          bestMatch = { distance: dist, id: candidate.id, username: candidate.username };
+                      }
+                  }
+
+                  setDebugInfo(prev => ({ ...prev, distance: bestMatch.distance, matchName: bestMatch.username }));
+
+                  if (bestMatch.distance < CONFIG.VERIFY_THRESHOLD) {
+                      stopCamera();
+                      setStatus('success');
+                      setFeedback(`欢迎回来，${bestMatch.username}`);
+                      setTimeout(() => onSuccess(bestMatch.id), 800);
+                  } else {
+                      setFeedback("未匹配到用户，请靠近或调整角度");
                   }
               }
           } else {
@@ -259,14 +285,15 @@ const FaceID: React.FC<FaceIDProps> = ({ onSuccess, onCancel, storedFaceData, mo
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-95 animate-fade-in">
       <div className="relative w-full max-w-md p-6 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl flex flex-col items-center">
         <h3 className="text-xl font-bold mb-2 text-gray-800 dark:text-white flex items-center gap-2">
-            {mode === 'register' ? <ScanFace className="w-6 h-6 text-blue-500"/> : <UserX className="w-6 h-6 text-purple-500"/>}
-            {mode === 'register' ? '人脸数据录入' : '人脸安全验证'}
+            {mode === 'register' ? <ScanFace className="w-6 h-6 text-blue-500"/> : 
+             mode === 'identify' ? <Search className="w-6 h-6 text-green-500"/> : <UserX className="w-6 h-6 text-purple-500"/>}
+            {mode === 'register' ? '人脸数据录入' : mode === 'identify' ? '刷脸识别登录' : '人脸安全验证'}
         </h3>
         
         {/* Debug Info Strip */}
         <div className="w-full flex justify-between text-[10px] text-gray-400 mb-2 font-mono bg-gray-100 dark:bg-gray-900 p-1 rounded">
             <span>亮度: {debugInfo.brightness || 0} (需&gt;{CONFIG.REG_MIN_BRIGHTNESS})</span>
-            {mode === 'verify' && <span>距离: {debugInfo.distance?.toFixed(2) || '-'} (需&lt;{CONFIG.VERIFY_THRESHOLD})</span>}
+            {mode !== 'register' && <span>距离: {debugInfo.distance?.toFixed(2) || '-'} (需&lt;{CONFIG.VERIFY_THRESHOLD})</span>}
             {mode === 'register' && <span>质量: {((debugInfo.score || 0)*100).toFixed(0)}% (需&gt;90%)</span>}
         </div>
 
@@ -304,7 +331,7 @@ const FaceID: React.FC<FaceIDProps> = ({ onSuccess, onCancel, storedFaceData, mo
           {status === 'success' && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-green-500 bg-opacity-20 backdrop-blur-sm">
               <CheckCircle className="w-20 h-20 text-green-500 drop-shadow-lg" />
-              <p className="text-white font-bold mt-2 shadow-black drop-shadow-md">成功</p>
+              <p className="text-white font-bold mt-2 shadow-black drop-shadow-md">验证成功</p>
             </div>
           )}
         </div>

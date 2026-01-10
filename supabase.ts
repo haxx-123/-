@@ -1,16 +1,17 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// Configuration from user input
-export const SUPABASE_URL = 'https://stockwise.art/api'; // 代理地址：用于数据库 CRUD (加速)
-export const SUPABASE_STORAGE_URL = 'https://jlakwbxkftokfdyqdrmt.supabase.co'; // 官方地址：用于文件存储 (Storage)
-export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpsYWt3YnhrZnRva2ZkeXFkcm10Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU5MDM4NDAsImV4cCI6MjA4MTQ3OTg0MH0.2Stwx6UV3Tv9ZpQdoc2_FEqyyLO8e2YDBmzIcNiIEfk';
+// 1. 定义真实配置
+const PROXY_URL = "https://stockwise.art/api";
+const DIRECT_URL = "https://jlaktbxhkftokfdyqdrmt.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpsYWt3YnhrZnRva2ZkeXFkcm10Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU5MDM4NDAsImV4cCI6MjA4MTQ3OTg0MH0.2Stwx6UV3Tv9ZpQdoc2_FEqyyLO8e2YDBmzIcNiIEfk";
 
-// 数据库客户端 (走代理)
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// 2. 主客户端（走代理，用于数据库 CRUD）
+export const supabase = createClient(PROXY_URL, SUPABASE_KEY);
 
-// 存储客户端 (直连官方源站，解决 404 问题)
-export const supabaseStorage = createClient(SUPABASE_STORAGE_URL, SUPABASE_ANON_KEY);
+// 3. 存储专用客户端（直连官方，用于图片上传/下载/删除）
+// 注意：必须使用直连 URL，否则 Storage 请求会被代理服务器拦截导致 404
+export const supabaseStorage = createClient(DIRECT_URL, SUPABASE_KEY);
 
 // Helper: Force sync product quantities (Big/Small) based on current batches
 // This ensures the `products` table fields are always accurate after any operation.

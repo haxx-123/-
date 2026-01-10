@@ -269,7 +269,9 @@ const Login = () => {
   const [inputName, setInputName] = useState('');
   const [inputPass, setInputPass] = useState('');
   const [useFaceID, setUseFaceID] = useState(false);
+  const [faceMode, setFaceMode] = useState<'verify' | 'identify'>('verify');
   const [targetFaceData, setTargetFaceData] = useState<number[] | undefined>(undefined);
+  const [faceCandidates, setFaceCandidates] = useState<any[]>([]);
   
   const handleLogin = () => {
     const userExists = users.find(u => u.username === inputName);
@@ -293,32 +295,69 @@ const Login = () => {
   };
 
   const handleFaceIDClick = () => {
-      let targetUser = users.find(u => u.username === inputName);
-      if (!targetUser && inputName === '管理员') {
-          alert("初始管理员请先使用密码登录，并在设置中录入人脸。");
-          return;
-      }
-
-      if (targetUser) { 
-          if (targetUser.face_descriptor && targetUser.face_descriptor.length > 0) {
-              setTargetFaceData(targetUser.face_descriptor); 
-              setUseFaceID(true); 
-          } else {
-              alert("该用户尚未录入人脸数据，请先使用密码登录并设置。");
+      // Logic for Verify (1:1) if username is entered
+      if (inputName) {
+          let targetUser = users.find(u => u.username === inputName);
+          if (!targetUser && inputName === '管理员') {
+              alert("初始管理员请先使用密码登录，并在设置中录入人脸。");
+              return;
           }
-      } else { 
-          alert("请输入用户名以便匹配人脸数据，或使用密码登录。"); 
+
+          if (targetUser) { 
+              if (targetUser.face_descriptor && targetUser.face_descriptor.length > 0) {
+                  setTargetFaceData(targetUser.face_descriptor); 
+                  setFaceMode('verify');
+                  setUseFaceID(true); 
+              } else {
+                  alert("该用户尚未录入人脸数据，请先使用密码登录并设置。");
+              }
+          } else {
+              // Should allow falling through to identify mode if user typed wrong username? 
+              // No, explicit input means explicit intent.
+              alert("用户不存在，无法验证。若需刷脸登录，请清空用户名。");
+          }
+      } 
+      // Logic for Identify (1:N) if username is EMPTY
+      else {
+          const validCandidates = users
+              .filter(u => u.face_descriptor && u.face_descriptor.length > 0)
+              .map(u => ({ id: u.id, username: u.username, descriptor: u.face_descriptor! }));
+          
+          if (validCandidates.length === 0) {
+              alert("系统中暂无可用的人脸数据，请先使用密码登录并录入。");
+              return;
+          }
+          
+          setFaceCandidates(validCandidates);
+          setFaceMode('identify');
+          setUseFaceID(true);
       }
   };
 
-  const handleFaceSuccess = () => {
-      let targetUser = users.find(u => u.username === inputName);
-      if (targetUser) { login(targetUser); setUseFaceID(false); }
+  const handleFaceSuccess = (result?: any) => {
+      if (faceMode === 'verify') {
+          let targetUser = users.find(u => u.username === inputName);
+          if (targetUser) { login(targetUser); }
+      } else if (faceMode === 'identify') {
+          // result is the user ID passed from FaceID component
+          const identifiedUser = users.find(u => u.id === result);
+          if (identifiedUser) { login(identifiedUser); }
+          else { alert("识别成功但未找到对应本地用户数据"); }
+      }
+      setUseFaceID(false);
   };
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 dark:bg-gray-900 px-4">
-      {useFaceID && <FaceID onSuccess={handleFaceSuccess} onCancel={() => setUseFaceID(false)} storedFaceData={targetFaceData} mode="verify" />}
+      {useFaceID && (
+          <FaceID 
+            onSuccess={handleFaceSuccess} 
+            onCancel={() => setUseFaceID(false)} 
+            storedFaceData={targetFaceData} 
+            candidates={faceCandidates}
+            mode={faceMode} 
+          />
+      )}
       <div className="w-full max-w-md bg-white dark:bg-gray-800 p-8 rounded-3xl shadow-xl">
         <div className="text-center mb-8">
            {/* 26.4.2 App Internal Logo */}
@@ -327,10 +366,13 @@ const Login = () => {
            <p className="text-gray-500 mt-2">智能库管系统</p>
         </div>
         <div className="space-y-4">
-          <input type="text" value={inputName} onChange={e => setInputName(e.target.value)} className="w-full px-4 py-3 rounded-xl border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="用户名 (如: 管理员)" />
+          <input type="text" value={inputName} onChange={e => setInputName(e.target.value)} className="w-full px-4 py-3 rounded-xl border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="用户名 (选填，空则刷脸识别)" />
           <input type="password" value={inputPass} onChange={e => setInputPass(e.target.value)} className="w-full px-4 py-3 rounded-xl border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="密码" />
           <motion.button whileTap={{ scale: 0.98 }} onClick={handleLogin} className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-600/30">登录</motion.button>
-          <motion.button whileTap={{ scale: 0.98 }} onClick={handleFaceIDClick} className="w-full py-3 border-2 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 rounded-xl font-bold hover:bg-gray-50 flex items-center justify-center gap-2"><UserCircle className="w-5 h-5" /> 人脸识别登录</motion.button>
+          <motion.button whileTap={{ scale: 0.98 }} onClick={handleFaceIDClick} className="w-full py-3 border-2 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 rounded-xl font-bold hover:bg-gray-50 flex items-center justify-center gap-2">
+              <UserCircle className="w-5 h-5" /> 
+              {inputName ? '人脸验证登录' : '刷脸识别登录'}
+          </motion.button>
         </div>
       </div>
       <InstallFloatingButton mode="static" />

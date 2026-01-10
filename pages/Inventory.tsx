@@ -7,6 +7,7 @@ import { useApp } from '../App';
 import { motion, AnimatePresence } from 'framer-motion';
 import BarcodeScanner from '../components/BarcodeScanner';
 import { supabase, supabaseStorage, syncProductStock } from '../supabase';
+import { getDirectImageUrl } from '../utils/common';
 import * as XLSX from 'xlsx';
 import imageCompression from 'browser-image-compression';
 
@@ -67,7 +68,7 @@ const Pagination = ({ current, total, pageSize, onChange }: { current: number, t
 // 16.2.3 Image Lightbox
 const ImageLightbox = ({ src, onClose }: { src: string, onClose: () => void }) => (
     <div className="fixed inset-0 z-[100] bg-black bg-opacity-90 flex items-center justify-center p-4 cursor-zoom-out animate-fade-in" onClick={onClose}>
-        <img src={src} className="max-w-full max-h-full rounded-lg shadow-2xl" alt="Product Full" />
+        <img src={getDirectImageUrl(src)} className="max-w-full max-h-full rounded-lg shadow-2xl" alt="Product Full" />
         <button className="absolute top-4 right-4 text-white p-2 bg-gray-800 rounded-full"><X className="w-6 h-6"/></button>
     </div>
 );
@@ -353,25 +354,60 @@ const BillingModal = ({ batch, product, onClose, onConfirm }: any) => {
 const ProductEditModal = ({ product, onClose, onSave }: any) => {
     const [form, setForm] = useState({...product});
     const [loading, setLoading] = useState(false);
-    const [previewImage, setPreviewImage] = useState<string | null>(product.image_url || null);
+    const [previewImage, setPreviewImage] = useState<string | null>(getDirectImageUrl(product.image_url) || null);
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             const file = e.target.files[0];
-            setPreviewImage(URL.createObjectURL(file));
-            try {
+            setSelectedFile(file); // Store file for upload on save
+            setPreviewImage(URL.createObjectURL(file)); // Show local preview
+        }
+    };
+
+    const handleSaveClick = async () => {
+        setLoading(true);
+        try {
+            let finalImageUrl = form.image_url;
+
+            // 1. Upload new image if selected
+            if (selectedFile) {
                 const options = { maxSizeMB: 0.2, maxWidthOrHeight: 1024, useWebWorker: true };
-                const compressedFile = await imageCompression(file, options);
+                const compressedFile = await imageCompression(selectedFile, options);
                 const fileName = `prod_${Date.now()}_${Math.random().toString(36).substr(2, 5)}.jpg`;
-                const { error: uploadError } = await supabaseStorage.storage.from('images').upload(fileName, compressedFile);
+                
+                // Upload via direct storage client
+                const { error: uploadError } = await supabaseStorage.storage.from('images').upload(fileName, compressedFile, {
+                    contentType: 'image/jpeg',
+                    upsert: false
+                });
+                
                 if (uploadError) throw uploadError;
+                
+                // Get new public URL
                 const { data: publicData } = supabaseStorage.storage.from('images').getPublicUrl(fileName);
-                setForm(prev => ({ ...prev, image_url: publicData.publicUrl }));
-            } catch (err: any) {
-                console.error("Image upload failed:", err);
-                alert("图片上传失败: " + err.message);
+                finalImageUrl = publicData.publicUrl;
+
+                // 2. Delete old image if exists and is not the same as new one
+                if (form.image_url && form.image_url !== finalImageUrl) {
+                    const oldUrl = form.image_url;
+                    const oldFileName = oldUrl.split('/').pop();
+                    // Safety check: ensure it looks like a generated filename
+                    if (oldFileName && oldFileName.includes('prod_')) {
+                        await supabaseStorage.storage.from('images').remove([oldFileName]);
+                    }
+                }
             }
+
+            // 3. Update product with new image URL
+            await onSave({ ...form, image_url: finalImageUrl });
+            
+        } catch (err: any) {
+            console.error("Save failed:", err);
+            alert("保存失败: " + err.message);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -416,7 +452,7 @@ const ProductEditModal = ({ product, onClose, onSave }: any) => {
                 </div>
                 <div className="mt-6 flex justify-end gap-2">
                     <button onClick={onClose} className="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded text-sm font-bold">取消</button>
-                    <LoadingButton onClick={async () => { setLoading(true); await onSave(form); setLoading(false); }} loading={loading} className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-bold shadow-lg">保存档案</LoadingButton>
+                    <LoadingButton onClick={handleSaveClick} loading={loading} className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-bold shadow-lg">保存档案</LoadingButton>
                 </div>
             </div>
         </div>
@@ -869,7 +905,7 @@ const Inventory = () => {
                                          <td className="p-4">
                                              <div className="flex items-center gap-3">
                                                  <div className="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center overflow-hidden border dark:border-gray-600 cursor-pointer" onClick={() => product.image_url && setLightboxSrc(product.image_url)}>
-                                                     {product.image_url ? <img src={product.image_url} className="w-full h-full object-cover"/> : <Package className="w-5 h-5 text-gray-400"/>}
+                                                     {product.image_url ? <img src={getDirectImageUrl(product.image_url)} className="w-full h-full object-cover"/> : <Package className="w-5 h-5 text-gray-400"/>}
                                                  </div>
                                                  <div>
                                                      <div className="font-bold text-gray-800 dark:text-gray-200">{product.name}</div>
