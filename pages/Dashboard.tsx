@@ -251,7 +251,11 @@ const AlertListModal = ({ title, items, onClose }: { title: string; items: any[]
 
 const Dashboard = () => {
   const { currentStore, products, logs } = useApp();
-  const [thresholds, setThresholds] = useState({ low: 10, expiry: 30 });
+  // Initialize with cached values or defaults
+  const [thresholds, setThresholds] = useState(() => {
+      const cached = localStorage.getItem('prism_thresholds');
+      return cached ? JSON.parse(cached) : { low: 10, expiry: 30 };
+  });
   const [showThresholdSettings, setShowThresholdSettings] = useState(false);
   const [activeModal, setActiveModal] = useState<'low' | 'expiry' | null>(null);
   const [dateRange, setDateRange] = useState<'7' | '30' | '90'>('7');
@@ -377,7 +381,10 @@ const Dashboard = () => {
                     <label className="block text-sm text-gray-500 mb-1">临期阈值 (天)</label>
                     <input type="number" value={thresholds.expiry} onChange={e => setThresholds({...thresholds, expiry: Number(e.target.value)})} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"/>
                  </div>
-                 <button onClick={() => setShowThresholdSettings(false)} className="w-full py-2 bg-blue-600 text-white rounded-lg">保存</button>
+                 <button onClick={() => {
+                     localStorage.setItem('prism_thresholds', JSON.stringify(thresholds));
+                     setShowThresholdSettings(false);
+                 }} className="w-full py-2 bg-blue-600 text-white rounded-lg">保存</button>
               </div>
            </div>
         </div>
@@ -389,9 +396,14 @@ const Dashboard = () => {
 
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold dark:text-white">仪表盘 - {currentStore.name}</h2>
-        <button onClick={() => setShowThresholdSettings(true)} className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg" title="设置阈值">
-           <Settings className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-3">
+            <div className="text-xs font-mono font-bold text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-lg border dark:border-gray-700 select-none">
+                <span className="text-red-400">{thresholds.low}</span> / <span className="text-yellow-500">{thresholds.expiry}</span>
+            </div>
+            <button onClick={() => setShowThresholdSettings(true)} className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg" title="设置阈值">
+               <Settings className="w-5 h-5" />
+            </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

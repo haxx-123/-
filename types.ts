@@ -119,6 +119,18 @@ export interface OperationLog {
   role_level: RoleLevel; 
 }
 
+// New Interface for DB Triggers
+export interface DbAuditLog {
+  id: string;
+  table_name: string;
+  record_id: string;
+  action: 'INSERT' | 'UPDATE' | 'DELETE';
+  old_data: any;
+  new_data: any;
+  performed_by: string; // UID or Text
+  created_at: string;
+}
+
 export type AnnouncementFrequency = 'once' | 'daily' | 'weekly' | 'monthly' | 'permanent';
 
 export interface Announcement {
@@ -164,4 +176,8 @@ export interface LoginRecord {
   device_name: string;
   ip_address: string;
   login_at: string;
+  location?: string; // 19.2.1.1
+  raw_user_agent?: string; // 19.2.1.2
+  session_id?: string; // 19.2.1.3
+  is_active?: boolean; // 19.2.2.1
 }

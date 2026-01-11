@@ -355,10 +355,13 @@ const OperationLogs = () => {
                             </span>
                         </td>
                         <td className="p-4">
-                            <TruncatedText 
-                                text={renderChangeDesc(log)} 
-                                className="font-medium text-gray-800 dark:text-gray-200" 
-                            />
+                            <div className="flex flex-col">
+                                <span className="text-xs font-bold text-gray-500 mb-1">{log.target_name}</span>
+                                <TruncatedText 
+                                    text={renderChangeDesc(log)} 
+                                    className="font-medium text-gray-800 dark:text-gray-200" 
+                                />
+                            </div>
                         </td>
                         {!isMobile && (
                             <td className="p-4 text-sm text-gray-500">

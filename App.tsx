@@ -4,7 +4,7 @@ import { HashRouter as Router, Routes, Route, useLocation, useNavigate } from 'r
 import { 
   Menu, X, LayoutDashboard, Package, Import, History, 
   ShieldCheck, Settings, Bell, Copy, Crop, 
-  LogOut, RefreshCw, UserCircle, MoreHorizontal, FileSpreadsheet
+  LogOut, RefreshCw, UserCircle, MoreHorizontal, FileSpreadsheet, PanelLeft
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import html2canvas from 'html2canvas';
@@ -35,7 +35,7 @@ interface AppContextType {
   theme: ThemeMode;
   setTheme: (t: ThemeMode) => void;
   user: User | null;
-  login: (u: User) => void;
+  login: (u: User) => Promise<void>;
   logout: () => void;
   currentStore: Store;
   setCurrentStore: (s: Store) => void;
@@ -63,6 +63,8 @@ interface AppContextType {
   announcements: Announcement[];
   setAnnouncements: React.Dispatch<React.SetStateAction<Announcement[]>>;
   reloadData: () => Promise<void>;
+  isSidebarCollapsed: boolean;
+  toggleSidebarCollapse: () => void;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -98,7 +100,7 @@ const SWUpdateToast = () => {
 };
 
 const Navbar = () => {
-  const { toggleSidebar, currentStore, setAnnouncementsOpen, user, announcements, handleCopy, handleExcel } = useApp();
+  const { toggleSidebar, currentStore, setAnnouncementsOpen, user, announcements, handleCopy, handleExcel, isSidebarCollapsed } = useApp();
   const location = useLocation();
   
   const unreadCount = announcements.filter(a => {
@@ -149,12 +151,13 @@ const Navbar = () => {
     }
   };
 
-  const allowedPages = ['/inventory', '/logs', '/audit'];
+  // Removed '/audit' from allowedPages to hide icons as requested
+  const allowedPages = ['/inventory', '/logs'];
   const showCopy = allowedPages.includes(location.pathname);
   const showExcel = allowedPages.includes(location.pathname) && !user?.permissions?.hideExcelExport;
 
-  const handleExcelClick = () => { if (handleExcel) handleExcel(); else alert(`请切换到库存、日志或审计页面，才能生效`); };
-  const handleCopyClick = () => { if (handleCopy) handleCopy(); else alert(`请切换到库存、日志或审计页面，才能生效`); };
+  const handleExcelClick = () => { if (handleExcel) handleExcel(); else alert(`请切换到库存或日志页面，才能生效`); };
+  const handleCopyClick = () => { if (handleCopy) handleCopy(); else alert(`请切换到库存或日志页面，才能生效`); };
 
   const ActionButtons = () => (
     <>
@@ -173,7 +176,7 @@ const Navbar = () => {
   );
 
   return (
-    <div id="app-navbar" className="h-16 fixed top-0 left-0 right-0 z-40 glass flex items-center justify-between px-4 lg:pl-64 transition-all">
+    <div id="app-navbar" className={`h-16 fixed top-0 left-0 right-0 z-40 glass flex items-center justify-between px-4 transition-all duration-300 ${isSidebarCollapsed ? 'lg:pl-20' : 'lg:pl-64'}`}>
       <div className="flex items-center lg:hidden">
         <button onClick={toggleSidebar} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"><Menu className="w-6 h-6 dark:text-white" /></button>
       </div>
@@ -191,7 +194,7 @@ const Navbar = () => {
 };
 
 const Sidebar = () => {
-  const { isSidebarOpen, toggleSidebar, currentStore, setStoreManagerOpen, user, logout, stores } = useApp();
+  const { isSidebarOpen, toggleSidebar, currentStore, setStoreManagerOpen, user, logout, stores, isSidebarCollapsed, toggleSidebarCollapse } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
   const menuItems = [
@@ -202,7 +205,9 @@ const Sidebar = () => {
     { path: '/audit', icon: ShieldCheck, label: '审计大厅', hidden: user?.permissions?.hideAuditHall },
     { path: '/settings', icon: Settings, label: '系统设置', hidden: user?.permissions?.hideSettings },
   ];
-  const sidebarClass = `fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-900 border-r dark:border-gray-700 transform transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`;
+  
+  // Use w-64 for mobile (default), and transition width on desktop based on collapse state
+  const sidebarClass = `fixed inset-y-0 left-0 z-50 bg-white dark:bg-gray-900 border-r dark:border-gray-700 transform transition-all duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} w-64 ${isSidebarCollapsed ? 'lg:w-20' : 'lg:w-64'}`;
 
   // Store Display Logic
   const isParent = currentStore.isParent;
@@ -221,34 +226,52 @@ const Sidebar = () => {
     <>
       {isSidebarOpen && <div className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden" onClick={toggleSidebar}></div>}
       <div id="app-sidebar" className={sidebarClass}>
-        <div className="h-16 flex items-center px-6 border-b dark:border-gray-700">
+        <div className={`h-16 flex items-center ${isSidebarCollapsed ? 'justify-center' : 'px-6'} border-b dark:border-gray-700 transition-all`}>
            {/* 26.4.2 App Internal Logo */}
-           <img src={APP_LOGO_URL} alt="Prism" className="w-8 h-8 rounded-lg mr-3 shadow-md" />
-           <span className="text-xl font-bold dark:text-white">棱镜 StockWise</span>
+           <img src={APP_LOGO_URL} alt="Prism" className={`w-8 h-8 rounded-lg shadow-md transition-all ${isSidebarCollapsed ? 'hidden' : 'mr-3'}`} />
+           {!isSidebarCollapsed && <span className="text-xl font-bold dark:text-white truncate">棱镜</span>}
+           
+           {/* Desktop Collapse Button */}
+           <button onClick={toggleSidebarCollapse} className={`hidden lg:flex p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 transition-all ${isSidebarCollapsed ? '' : 'ml-auto'}`} title={isSidebarCollapsed ? "展开" : "收起"}>
+              <PanelLeft className={`w-5 h-5 transition-transform ${isSidebarCollapsed ? 'rotate-180' : ''}`} />
+           </button>
+
            <button onClick={toggleSidebar} className="ml-auto lg:hidden"><X className="w-5 h-5" /></button>
         </div>
-        <div className="p-4">
-          <button onClick={() => setStoreManagerOpen(true)} disabled={user?.permissions?.hideStoreEdit} className={`w-full py-2.5 px-4 mb-4 rounded-xl flex items-center justify-between transition-colors ${storeColorClass} ${user?.permissions?.hideStoreEdit ? 'opacity-80 cursor-default' : 'hover:opacity-90'}`}>
-            <span className="font-bold truncate pr-2">{currentStore.name}{currentStore.isParent ? '(母)' : '(子)'}</span>
-            {!user?.permissions?.hideStoreEdit && <RefreshCw className="w-4 h-4 opacity-70 flex-shrink-0" />}
+        <div className="p-4 flex flex-col h-[calc(100%-4rem)]">
+          <button onClick={() => setStoreManagerOpen(true)} disabled={user?.permissions?.hideStoreEdit} className={`w-full py-2.5 mb-4 rounded-xl flex items-center transition-colors ${storeColorClass} ${user?.permissions?.hideStoreEdit ? 'opacity-80 cursor-default' : 'hover:opacity-90'} ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-between px-4'}`}>
+            {isSidebarCollapsed ? (
+                <span className="font-bold text-xl">{currentStore.name.charAt(0)}</span>
+            ) : (
+                <>
+                    <span className="font-bold truncate pr-2">{currentStore.name}{currentStore.isParent ? '(母)' : '(子)'}</span>
+                    {!user?.permissions?.hideStoreEdit && <RefreshCw className="w-4 h-4 opacity-70 flex-shrink-0" />}
+                </>
+            )}
           </button>
-          <nav className="space-y-1">
+          <nav className="space-y-1 flex-1">
             {menuItems.filter(i => !i.hidden).map((item) => {
               const isActive = location.pathname === item.path;
               return (
-                <button key={item.path} onClick={() => { navigate(item.path); if(window.innerWidth < 1024) toggleSidebar(); }} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${isActive ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 font-medium shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
-                  <item.icon className="w-5 h-5" /><span>{item.label}</span>
+                <button key={item.path} onClick={() => { navigate(item.path); if(window.innerWidth < 1024) toggleSidebar(); }} className={`w-full flex items-center rounded-xl transition-all ${isActive ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 font-medium shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'} ${isSidebarCollapsed ? 'justify-center py-3 px-0' : 'space-x-3 px-4 py-3'}`} title={isSidebarCollapsed ? item.label : ''}>
+                  <item.icon className="w-5 h-5 flex-shrink-0" />
+                  {!isSidebarCollapsed && <span>{item.label}</span>}
                 </button>
               );
             })}
           </nav>
-        </div>
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
-           <div className="flex items-center space-x-3 cursor-pointer p-2 rounded-xl hover:bg-white dark:hover:bg-gray-800 transition-colors" onClick={() => navigate('/settings')}>
-              <div className="w-10 h-10 rounded-full bg-indigo-500 flex items-center justify-center text-white font-bold">{user?.username[0]}</div>
-              <div className="flex-1 overflow-hidden"><UsernameBadge name={user?.username || ''} roleLevel={user?.role || RoleLevel.GUEST} className="text-sm block truncate" /><span className="text-xs text-gray-500">点击设置</span></div>
-              <LogOut className="w-5 h-5 text-gray-400 hover:text-red-500" onClick={(e) => { e.stopPropagation(); logout(); }} />
-           </div>
+          
+          <div className={`mt-auto pt-4 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 -mx-4 px-4 pb-4 mb-[-1rem]`}>
+             <div className={`flex items-center cursor-pointer p-2 rounded-xl hover:bg-white dark:hover:bg-gray-800 transition-colors ${isSidebarCollapsed ? 'justify-center' : 'space-x-3'}`} onClick={() => navigate('/settings')}>
+                <div className="w-10 h-10 rounded-full bg-indigo-500 flex items-center justify-center text-white font-bold flex-shrink-0">{user?.username[0]}</div>
+                {!isSidebarCollapsed && (
+                    <>
+                        <div className="flex-1 overflow-hidden"><UsernameBadge name={user?.username || ''} roleLevel={user?.role || RoleLevel.GUEST} className="text-sm block truncate" /><span className="text-xs text-gray-500">点击设置</span></div>
+                        <LogOut className="w-5 h-5 text-gray-400 hover:text-red-500 flex-shrink-0" onClick={(e) => { e.stopPropagation(); logout(); }} />
+                    </>
+                )}
+             </div>
+          </div>
         </div>
       </div>
     </>
@@ -426,7 +449,7 @@ const PageWrapper = ({ children }: { children?: React.ReactNode }) => (
 );
 
 const MainLayout = () => {
-  const { user, announcementsOpen, setAnnouncementsOpen, storeManagerOpen, setStoreManagerOpen, activePopupAnnouncement } = useApp();
+  const { user, announcementsOpen, setAnnouncementsOpen, storeManagerOpen, setStoreManagerOpen, activePopupAnnouncement, isSidebarCollapsed } = useApp();
   const location = useLocation();
   if (!user) return <Login />;
   return (
@@ -436,7 +459,7 @@ const MainLayout = () => {
       <SWUpdateToast />
       <ModalContainer isOpen={announcementsOpen}><AnnouncementCenter onClose={() => setAnnouncementsOpen(false)} initialPopup={activePopupAnnouncement} /></ModalContainer>
       <ModalContainer isOpen={storeManagerOpen}><StoreManager onClose={() => setStoreManagerOpen(false)} /></ModalContainer>
-      <main id="main-content" className="lg:pl-64 pt-16 min-h-screen transition-all">
+      <main id="main-content" className={`pt-16 min-h-screen transition-all duration-300 ${isSidebarCollapsed ? 'lg:pl-20' : 'lg:pl-64'}`}>
         <div className="p-4 lg:p-8 max-w-7xl mx-auto">
            <AnimatePresence mode="wait">
              <Routes location={location} key={location.pathname}>
@@ -456,13 +479,16 @@ const MainLayout = () => {
 };
 
 const AppContent = () => {
-  const [theme, setThemeState] = useState<ThemeMode>('light');
+  const [theme, setThemeState] = useState<ThemeMode>(() => (localStorage.getItem('prism_theme') as ThemeMode) || 'light');
   const [user, setUser] = useState<User | null>(null);
   const [currentStore, setCurrentStore] = useState<Store>({ id: 'dummy', name: '加载中...', isParent: false });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [announcementsOpen, setAnnouncementsOpen] = useState(false);
   const [activePopupAnnouncement, setActivePopupAnnouncement] = useState<Announcement | null>(null);
   const [storeManagerOpen, setStoreManagerOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+      return localStorage.getItem('sidebar_collapsed') === 'true';
+  });
   
   // 27.2.1 Initial State: Not Ready
   const [appReady, setAppReady] = useState(false);
@@ -609,6 +635,30 @@ const AppContent = () => {
 
   // --- End Realtime ---
 
+  // Check session validity periodically
+  useEffect(() => {
+    const checkSession = async () => {
+        if (!user) return;
+        const currentSessionId = sessionStorage.getItem('prism_session_id');
+        if (!currentSessionId) return; // Legacy login or just missed
+
+        const { data } = await supabase
+          .from('login_records')
+          .select('is_active')
+          .eq('session_id', currentSessionId)
+          .maybeSingle(); // Use maybeSingle to avoid 406 if row deleted or multiple
+        
+        if (data && data.is_active === false) {
+            alert("您已在其他设备登录，当前会话已失效 (被踢下线)。");
+            logout();
+        }
+    };
+    
+    // Check every 30s
+    const interval = setInterval(checkSession, 30000);
+    return () => clearInterval(interval);
+  }, [user]);
+
   useEffect(() => {
       const storedUser = localStorage.getItem('prism_user');
       if (storedUser) {
@@ -733,23 +783,78 @@ const AppContent = () => {
   }, [user, appReady, announcements]);
 
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
+  const toggleSidebarCollapse = () => {
+      setIsSidebarCollapsed(prev => {
+          const next = !prev;
+          localStorage.setItem('sidebar_collapsed', String(next));
+          return next;
+      });
+  };
   
-  const login = (u: User) => {
+  const login = async (u: User) => {
       const freshUser = users.find(existing => existing.id === u.id) || u;
       setUser(freshUser);
       localStorage.setItem('prism_user', JSON.stringify(freshUser));
-      supabase.from('login_records').insert({ id: `login_${Date.now()}`, user_id: freshUser.id, user_name: freshUser.username, device_name: navigator.userAgent.includes('Mobile') ? 'Mobile Device' : 'Desktop PC', ip_address: '192.168.1.x', login_at: new Date().toISOString() }).then(() => reloadData());
+      
+      const sessionId = `sess_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      sessionStorage.setItem('prism_session_id', sessionId);
+
+      const ua = navigator.userAgent;
+      const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+      const deviceName = isMobileDevice ? 'Mobile Device' : 'Desktop PC';
+
+      // 19.2.2.1 Concurrent Login Limit Logic
+      // Check active sessions
+      const { data: activeSessions } = await supabase
+        .from('login_records')
+        .select('*')
+        .eq('user_id', freshUser.id)
+        .eq('is_active', true)
+        .order('login_at', { ascending: true }); // Oldest first
+      
+      // If active sessions count >= 3, kick out oldest
+      if (activeSessions && activeSessions.length >= 3) {
+          const oldest = activeSessions[0];
+          await supabase.from('login_records').update({ is_active: false }).eq('id', oldest.id);
+      }
+
+      // Insert new record with error handling
+      const { error: insertError } = await supabase.from('login_records').insert({ 
+          id: `login_${Date.now()}`, 
+          user_id: freshUser.id, 
+          user_name: freshUser.username, 
+          device_name: deviceName, 
+          ip_address: '192.168.1.x', // Placeholder
+          login_at: new Date().toISOString(),
+          // New fields
+          location: 'Unknown City', // Placeholder, real implementation needs backend IP geolocation
+          raw_user_agent: ua,
+          session_id: sessionId,
+          is_active: true
+      });
+
+      if (insertError) {
+          console.error("Login Record Insert Error:", insertError);
+          // Alert user to specific error to debug table schema mismatch or permissions
+          alert(`登录日志写入失败: ${insertError.message}\n请检查数据库表结构或权限配置。`);
+      }
+      
+      await reloadData();
   };
   
   const logout = () => { 
       if (user) { const today = new Date().toDateString(); sessionStorage.removeItem(`hasCheckedPopups_${user.id}_${today}`); }
+      sessionStorage.removeItem('prism_session_id');
       sessionStorage.clear(); setUser(null); localStorage.removeItem('prism_user');
   };
-  const setTheme = (t: ThemeMode) => setThemeState(t);
+  const setTheme = (t: ThemeMode) => {
+      setThemeState(t);
+      localStorage.setItem('prism_theme', t);
+  };
 
   return (
     <AppContext.Provider value={{ 
-      theme, setTheme, user, login, logout, currentStore, setCurrentStore, isSidebarOpen, toggleSidebar, announcementsOpen, setAnnouncementsOpen, activePopupAnnouncement, storeManagerOpen, setStoreManagerOpen, setPageActions, handleCopy: pageActions.handleCopy, handleExcel: pageActions.handleExcel, isMobile, products, setProducts, logs, setLogs, users, setUsers, loginRecords, setLoginRecords, stores, setStores, announcements, setAnnouncements, reloadData
+      theme, setTheme, user, login, logout, currentStore, setCurrentStore, isSidebarOpen, toggleSidebar, announcementsOpen, setAnnouncementsOpen, activePopupAnnouncement, storeManagerOpen, setStoreManagerOpen, setPageActions, handleCopy: pageActions.handleCopy, handleExcel: pageActions.handleExcel, isMobile, products, setProducts, logs, setLogs, users, setUsers, loginRecords, setLoginRecords, stores, setStores, announcements, setAnnouncements, reloadData, isSidebarCollapsed, toggleSidebarCollapse
     }}>
       {/* 27. Splash Screen with Logic */}
       <SplashScreen isReady={appReady} />

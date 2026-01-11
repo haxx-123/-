@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Search, ChevronDown, ChevronRight, Plus, Package, FileText, Edit2, X, Save, ArrowRightLeft, Info, ScanLine, Filter, MapPin, Trash2, Image as ImageIcon, ChevronLeft, CheckSquare, Square, Box, Loader2, Calculator, AlertTriangle, Calendar, Camera, Zap, ShoppingCart, MinusCircle, PlusCircle, CheckCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -85,6 +84,44 @@ const ImageLightbox = ({ src, onClose }: { src: string, onClose: () => void }) =
         <button className="absolute top-4 right-4 text-white p-2 bg-gray-800 rounded-full"><X className="w-6 h-6"/></button>
     </div>
 );
+
+// ID Revealer Component (Hover 1s to show, Click to copy)
+const IdRevealer = ({ id, children }: React.PropsWithChildren<{ id: string }>) => {
+    const [show, setShow] = useState(false);
+    const timer = useRef<any>(null);
+
+    const handleMouseEnter = () => {
+        timer.current = setTimeout(() => setShow(true), 1000);
+    };
+
+    const handleMouseLeave = () => {
+        if (timer.current) clearTimeout(timer.current);
+        setShow(false);
+    };
+
+    const handleClick = (e: React.MouseEvent) => {
+        if (show) {
+            e.stopPropagation();
+            navigator.clipboard.writeText(id).then(() => alert(`ID 已复制: ${id}`));
+        }
+    };
+
+    return (
+        <div 
+            className="relative"
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
+            onClick={handleClick}
+        >
+            {children}
+            {show && (
+                <div className="absolute bottom-full left-0 mb-1 z-50 bg-black/80 text-white text-xs px-2 py-1 rounded shadow-lg whitespace-nowrap backdrop-blur-sm border border-white/10 animate-fade-in">
+                    ID: {id} (点击复制)
+                </div>
+            )}
+        </div>
+    );
+};
 
 // --- Interface for POS List ---
 interface PosItem {
@@ -1028,10 +1065,10 @@ const Inventory = () => {
                                                  <div className="w-12 h-12 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center overflow-hidden border dark:border-gray-600 cursor-pointer shadow-sm hover:shadow-md transition-shadow" onClick={() => product.image_url && setLightboxSrc(getDirectImageUrl(product.image_url)!)}>
                                                      {product.image_url ? <img src={getDirectImageUrl(product.image_url)} className="w-full h-full object-cover" alt={product.name}/> : <Package className="w-6 h-6 text-gray-400"/>}
                                                  </div>
-                                                 <div>
-                                                     <div className="font-bold text-gray-800 dark:text-gray-200">{product.name}</div>
-                                                     <div className="text-xs text-gray-400 font-mono">{product.sku}</div>
-                                                 </div>
+                                                 <IdRevealer id={product.id}>
+                                                    <div className="font-bold text-gray-800 dark:text-gray-200">{product.name}</div>
+                                                    <div className="text-xs text-gray-400 font-mono">{product.sku}</div>
+                                                 </IdRevealer>
                                              </div>
                                          </td>
                                          <td className="p-4 text-sm"><span className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-500">{product.category}</span></td>
@@ -1080,7 +1117,11 @@ const Inventory = () => {
                                                                         {isParentView && (
                                                                             <td className="py-3 pl-2 text-blue-600 dark:text-blue-400 font-bold text-xs">{storeName}</td>
                                                                         )}
-                                                                        <td className="py-3 pl-2 font-mono font-bold" style={{color: 'var(--accent-color)'}}>{batch.batchNumber}</td>
+                                                                        <td className="py-3 pl-2 font-mono font-bold" style={{color: 'var(--accent-color)'}}>
+                                                                            <IdRevealer id={batch.id}>
+                                                                                {batch.batchNumber}
+                                                                            </IdRevealer>
+                                                                        </td>
                                                                         <td className="py-3">
                                                                             {batch.expiryDate ? (
                                                                                 <span className={isExpired ? 'text-[#FF4D4F] font-bold' : ''} style={{color: isExpired ? '#FF4D4F' : 'var(--text-secondary)'}}>
