@@ -40,7 +40,7 @@
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
-    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <!-- Removed CDN face-api.js to enforce local bundling -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
     <!-- PWA Install Event Capture -->
@@ -116,6 +116,7 @@
         --accent-color: #D65D0E;
       }
 
+      /* 35.2.1 Prism Light - Ghost White */
       html.theme-prism-light {
         --bg-primary: #F2F3F7;
         --bg-paper: #FFFFFF;
@@ -126,6 +127,7 @@
         --accent-color: #076678;
       }
 
+      /* 35.2.2 Prism Deep Dark */
       html.theme-prism-dark {
         --bg-primary: #1D2021;
         --bg-paper: #282828;
@@ -238,8 +240,10 @@
     "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.39.3",
     "browser-image-compression": "https://esm.sh/browser-image-compression@2.0.2",
     "path": "https://esm.sh/path@^0.12.7",
+    "ua-parser-js": "https://esm.sh/ua-parser-js@^1.0.35",
     "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
-    "vite": "https://esm.sh/vite@^7.3.0"
+    "vite": "https://esm.sh/vite@^7.3.0",
+    "face-api.js": "https://esm.sh/face-api.js@^0.22.2"
   }
 }
 </script>

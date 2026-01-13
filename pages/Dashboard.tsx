@@ -1,4 +1,5 @@
 
+// ... existing imports ...
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../App';
 import { AlertTriangle, Clock, Settings, X, TrendingUp, BarChart2, Calendar, Copy, FileSpreadsheet, Crop, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -6,6 +7,7 @@ import { LogAction } from '../types';
 import html2canvas from 'html2canvas';
 import * as XLSX from 'xlsx';
 
+// ... (retain all chart components and helpers as is) ...
 // --- Helper Components for Charts (SVG) ---
 
 const SimpleBarChart = ({ data }: { data: { label: string; value: number; color: string }[] }) => {
@@ -395,7 +397,9 @@ const Dashboard = () => {
       {activeModal === 'expiry' && <AlertListModal title="即将过期清单" items={expiryItems as any[]} onClose={() => setActiveModal(null)} />}
 
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold dark:text-white">仪表盘 - {currentStore.name}</h2>
+        <h2 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-500 bg-clip-text text-transparent select-none">
+            仪表盘 - {currentStore.name}
+        </h2>
         <div className="flex items-center gap-3">
             <div className="text-xs font-mono font-bold text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-lg border dark:border-gray-700 select-none">
                 <span className="text-red-400">{thresholds.low}</span> / <span className="text-yellow-500">{thresholds.expiry}</span>

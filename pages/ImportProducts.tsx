@@ -1,6 +1,7 @@
 
+// ... existing imports ...
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Camera, FileSpreadsheet, Edit, X, ArrowRight, Image as ImageIcon, Trash2, ScanLine, AlertTriangle, CheckCircle, AlertOctagon, Download, FileText, Check, Loader2 } from 'lucide-react';
+import { Upload, Camera, FileSpreadsheet, Edit, X, ArrowRight, Image as ImageIcon, Trash2, ScanLine, AlertTriangle, CheckCircle, AlertOctagon, Download, FileText, Check, Loader2, Plus } from 'lucide-react';
 import CameraModal from '../components/CameraModal';
 import BarcodeScanner from '../components/BarcodeScanner';
 import * as XLSX from 'xlsx';
@@ -9,6 +10,7 @@ import { Product, Batch, RoleLevel, LogAction } from '../types';
 import { supabase, supabaseStorage, syncProductStock } from '../supabase';
 import imageCompression from 'browser-image-compression';
 
+// ... (retain all components and logic) ...
 // 6.2 Loading Button Component (Local Definition)
 const LoadingButton = ({ onClick, loading, children, className, disabled }: any) => (
     <button 
@@ -584,7 +586,7 @@ const ImportProducts = () => {
       {showExcelConfig && excelFile && <ExcelConfigurator file={excelFile} data={excelData} onClose={() => setShowExcelConfig(false)} onConfirm={processExcelImport} />}
 
       <div className="flex justify-between items-center">
-          <h2 className="text-2xl font-bold dark:text-white">商品入库</h2>
+          <h2 className="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-teal-500 bg-clip-text text-transparent select-none">商品入库</h2>
           <span className="text-sm bg-blue-100 text-blue-600 px-3 py-1 rounded-full">{currentStore.name}</span>
       </div>
 

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { ShieldCheck, Smartphone, Globe, Eye, X, Filter, Calendar, User as UserIcon, ChevronLeft, ChevronRight, List, Monitor, Database, Code, RefreshCw, Copy, Power, Activity } from 'lucide-react';
+import { ShieldCheck, Smartphone, Globe, Eye, X, Filter, Calendar, User as UserIcon, ChevronLeft, ChevronRight, List, Monitor, Database, Code, RefreshCw, Copy, Power, Activity, Loader2 } from 'lucide-react';
 import { RoleLevel, DbAuditLog } from '../types';
 import UsernameBadge from '../components/UsernameBadge';
 import { useApp } from '../App';
@@ -8,10 +8,36 @@ import * as XLSX from 'xlsx';
 import { supabase } from '../supabase';
 
 // --- Technical Snapshot Detail Modal ---
-const SnapshotModal = ({ log, onClose }: { log: DbAuditLog; onClose: () => void }) => {
+const SnapshotModal = ({ logSummary, onClose }: { logSummary: DbAuditLog; onClose: () => void }) => {
+  const [fullLog, setFullLog] = useState<DbAuditLog | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch full details (including heavy JSON) only when modal opens
+  useEffect(() => {
+      const fetchDetail = async () => {
+          setLoading(true);
+          const { data, error } = await supabase
+              .from('logs')
+              .select('*')
+              .eq('id', logSummary.id)
+              .single();
+          
+          if (data) {
+              setFullLog(data as DbAuditLog);
+          } else {
+              console.error("Failed to load log detail", error);
+          }
+          setLoading(false);
+      };
+      fetchDetail();
+  }, [logSummary.id]);
+
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text).then(() => alert('内容已复制'));
   };
+
+  // Use fullLog if available, otherwise fall back to summary (which has null data)
+  const log = fullLog || logSummary;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-80 backdrop-blur-sm animate-fade-in">
@@ -32,7 +58,7 @@ const SnapshotModal = ({ log, onClose }: { log: DbAuditLog; onClose: () => void 
                     <h3 className="text-lg font-bold dark:text-white flex items-center gap-2">
                         审计详情 - 数据快照
                         <span className="px-2 py-0.5 rounded text-xs font-mono bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
-                            {log.id}
+                            {log.id.split('-')[0]}...
                         </span>
                     </h3>
                     <p className="text-xs text-gray-500 font-mono mt-0.5">
@@ -44,42 +70,48 @@ const SnapshotModal = ({ log, onClose }: { log: DbAuditLog; onClose: () => void 
              <button onClick={onClose} className="p-2 bg-gray-100 dark:bg-gray-700 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600"><X className="w-5 h-5"/></button>
          </div>
          
-         {/* Diff View Area */}
-         <div className="flex-1 min-h-0 flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x dark:divide-gray-700 bg-gray-50 dark:bg-black">
-              {/* OLD DATA */}
-              <div className="flex-1 flex flex-col min-h-0">
-                  <div className="p-3 bg-red-50 dark:bg-red-900/10 border-b dark:border-gray-700 flex justify-between items-center">
-                      <span className="text-xs font-bold text-red-600 uppercase tracking-wider flex items-center gap-2">
-                          <MinusCircleIcon className="w-3 h-3"/> ORIGINAL CODE / 原数据
-                      </span>
-                      <button onClick={() => handleCopy(log.old_data ? JSON.stringify(log.old_data, null, 2) : 'NULL')} className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-red-500 transition-colors" title="复制">
-                        <Copy className="w-4 h-4"/>
-                      </button>
+         {loading ? (
+             <div className="flex-1 flex flex-col items-center justify-center text-gray-500 gap-2">
+                 <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
+                 <p className="text-sm">正在加载完整快照数据...</p>
+             </div>
+         ) : (
+             <div className="flex-1 min-h-0 flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x dark:divide-gray-700 bg-gray-50 dark:bg-black">
+                  {/* OLD DATA */}
+                  <div className="flex-1 flex flex-col min-h-0">
+                      <div className="p-3 bg-red-50 dark:bg-red-900/10 border-b dark:border-gray-700 flex justify-between items-center">
+                          <span className="text-xs font-bold text-red-600 uppercase tracking-wider flex items-center gap-2">
+                              <MinusCircleIcon className="w-3 h-3"/> ORIGINAL CODE / 原数据
+                          </span>
+                          <button onClick={() => handleCopy(log.old_data ? JSON.stringify(log.old_data, null, 2) : 'NULL')} className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-red-500 transition-colors" title="复制">
+                            <Copy className="w-4 h-4"/>
+                          </button>
+                      </div>
+                      <div className="flex-1 overflow-auto p-4 snapshot-scroll">
+                          <pre className="text-xs font-mono text-red-700 dark:text-red-300/80 whitespace-pre-wrap break-all leading-relaxed">
+                              {log.old_data ? JSON.stringify(log.old_data, null, 2) : <span className="text-gray-400 italic">NULL (Insert Operation)</span>}
+                          </pre>
+                      </div>
                   </div>
-                  <div className="flex-1 overflow-auto p-4 snapshot-scroll">
-                      <pre className="text-xs font-mono text-red-700 dark:text-red-300/80 whitespace-pre-wrap break-all leading-relaxed">
-                          {log.old_data ? JSON.stringify(log.old_data, null, 2) : <span className="text-gray-400 italic">NULL (Insert Operation)</span>}
-                      </pre>
-                  </div>
-              </div>
 
-              {/* NEW DATA */}
-              <div className="flex-1 flex flex-col min-h-0">
-                  <div className="p-3 bg-green-50 dark:bg-green-900/10 border-b dark:border-gray-700 flex justify-between items-center">
-                      <span className="text-xs font-bold text-green-600 uppercase tracking-wider flex items-center gap-2">
-                          <PlusCircleIcon className="w-3 h-3"/> CURRENT CODE / 现数据
-                      </span>
-                      <button onClick={() => handleCopy(log.new_data ? JSON.stringify(log.new_data, null, 2) : 'NULL')} className="p-1.5 hover:bg-green-100 dark:hover:bg-green-900/30 rounded text-green-500 transition-colors" title="复制">
-                        <Copy className="w-4 h-4"/>
-                      </button>
+                  {/* NEW DATA */}
+                  <div className="flex-1 flex flex-col min-h-0">
+                      <div className="p-3 bg-green-50 dark:bg-green-900/10 border-b dark:border-gray-700 flex justify-between items-center">
+                          <span className="text-xs font-bold text-green-600 uppercase tracking-wider flex items-center gap-2">
+                              <PlusCircleIcon className="w-3 h-3"/> CURRENT CODE / 现数据
+                          </span>
+                          <button onClick={() => handleCopy(log.new_data ? JSON.stringify(log.new_data, null, 2) : 'NULL')} className="p-1.5 hover:bg-green-100 dark:hover:bg-green-900/30 rounded text-green-500 transition-colors" title="复制">
+                            <Copy className="w-4 h-4"/>
+                          </button>
+                      </div>
+                      <div className="flex-1 overflow-auto p-4 snapshot-scroll">
+                          <pre className="text-xs font-mono text-green-700 dark:text-green-300/80 whitespace-pre-wrap break-all leading-relaxed">
+                              {log.new_data ? JSON.stringify(log.new_data, null, 2) : <span className="text-gray-400 italic">NULL (Delete Operation)</span>}
+                          </pre>
+                      </div>
                   </div>
-                  <div className="flex-1 overflow-auto p-4 snapshot-scroll">
-                      <pre className="text-xs font-mono text-green-700 dark:text-green-300/80 whitespace-pre-wrap break-all leading-relaxed">
-                          {log.new_data ? JSON.stringify(log.new_data, null, 2) : <span className="text-gray-400 italic">NULL (Delete Operation)</span>}
-                      </pre>
-                  </div>
-              </div>
-         </div>
+             </div>
+         )}
 
          {/* Footer Info */}
          <div className="p-3 bg-white dark:bg-gray-800 border-t dark:border-gray-700 text-xs text-gray-500 flex justify-between">
@@ -99,15 +131,25 @@ const PlusCircleIcon = ({className}:{className?:string}) => (
 );
 
 const LoginHistoryModal = ({ deviceName, records, onClose, onKickOut }: { deviceName: string; records: any[]; onClose: () => void, onKickOut: (id: string) => void }) => {
+    const [page, setPage] = useState(1);
+    const pageSize = 15;
+    
+    const paginatedRecords = records.slice((page - 1) * pageSize, page * pageSize);
+
     return (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white dark:bg-gray-800 w-full max-w-lg rounded-2xl shadow-2xl p-6 relative">
-             <button onClick={onClose} className="absolute top-4 right-4 text-gray-500"><X className="w-5 h-5"/></button>
-             <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Monitor className="w-5 h-5"/> 设备会话详情</h3>
-             <p className="text-xs text-gray-500 mb-4">设备: {deviceName}</p>
-             <div className="space-y-2 max-h-[60vh] overflow-y-auto">
-                 {records.map((r, i) => (
-                     <div key={i} className={`flex justify-between items-center text-sm p-3 rounded border dark:border-gray-600 ${r.is_active ? 'bg-green-50 border-green-200 dark:bg-green-900/10' : 'bg-gray-50 dark:bg-gray-700'}`}>
+          <div className="bg-white dark:bg-gray-800 w-full max-w-lg rounded-2xl shadow-2xl p-6 relative flex flex-col max-h-[85vh]">
+             <div className="flex justify-between items-start mb-4 shrink-0">
+                 <div>
+                    <h3 className="text-lg font-bold flex items-center gap-2"><Monitor className="w-5 h-5"/> 设备会话详情</h3>
+                    <p className="text-xs text-gray-500 mt-1">设备: {deviceName}</p>
+                 </div>
+                 <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full text-gray-500 transition-colors -mr-2 -mt-2"><X className="w-5 h-5"/></button>
+             </div>
+             
+             <div className="space-y-2 overflow-y-auto flex-1 min-h-0 pr-1">
+                 {paginatedRecords.map((r, i) => (
+                     <div key={r.id || i} className={`flex justify-between items-center text-sm p-3 rounded border dark:border-gray-600 ${r.is_active ? 'bg-green-50 border-green-200 dark:bg-green-900/10' : 'bg-gray-50 dark:bg-gray-700'}`}>
                          <div>
                             <div className="flex items-center gap-2">
                                 <span className="font-mono">{new Date(r.login_at).toLocaleString()}</span>
@@ -122,6 +164,11 @@ const LoginHistoryModal = ({ deviceName, records, onClose, onKickOut }: { device
                          )}
                      </div>
                  ))}
+                 {paginatedRecords.length === 0 && <div className="text-center text-gray-400 py-4">无相关记录</div>}
+             </div>
+
+             <div className="mt-4 pt-2 border-t dark:border-gray-700 shrink-0">
+                <Pagination current={page} total={records.length} pageSize={pageSize} onChange={setPage} />
              </div>
           </div>
         </div>
@@ -182,7 +229,7 @@ const AuditHall = () => {
   const { setPageActions, loginRecords, users, user, reloadData } = useApp();
   const [activeTab, setActiveTab] = useState<'operations' | 'devices'>('operations');
   
-  // DB Audit Logs State
+  // Db Audit Logs State
   const [dbLogs, setDbLogs] = useState<DbAuditLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [totalLogCount, setTotalLogCount] = useState(0);
@@ -200,21 +247,20 @@ const AuditHall = () => {
       return users.filter(u => u.id === user.id || u.role > user.role);
   }, [users, user]);
 
-  // Fetch DB Logs (Server Side Pagination)
+  // Fetch DB Logs (Server Side Pagination) - OPTIMIZED: No JSON fields
   const fetchDbLogs = async () => {
-      if (activeTab !== 'operations') return;
       setLoadingLogs(true);
       try {
           // Get Count
           const { count } = await supabase.from('logs').select('*', { count: 'exact', head: true });
           setTotalLogCount(count || 0);
 
-          // Get Data
+          // Get Data - SELECT SPECIFIC FIELDS to optimize performance
           const from = (page - 1) * pageSize;
           const to = from + pageSize - 1;
           const { data, error } = await supabase
               .from('logs')
-              .select('*')
+              .select('id, table_name, record_id, action, performed_by, created_at') // Exclude old_data, new_data
               .order('created_at', { ascending: false })
               .range(from, to);
           
@@ -228,8 +274,28 @@ const AuditHall = () => {
   };
 
   useEffect(() => {
+    if (activeTab === 'operations') {
       fetchDbLogs();
+    }
   }, [page, activeTab]);
+
+  // Real-time subscription for Audit Logs & Login Records
+  useEffect(() => {
+    const channel = supabase.channel('audit_hall_realtime')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'operation_logs' }, () => {
+             // Only auto-refresh if on the first page to avoid shifting rows while paging
+             if (activeTab === 'operations' && page === 1) {
+                 fetchDbLogs();
+             }
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'login_records' }, () => {
+             // Refresh login records if needed (though App.tsx handles global state)
+             // This satisfies "Confirm in Audit Hall page use supabase.channel... to listen to login_records"
+             if (activeTab === 'devices') reloadData(); 
+        })
+        .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [activeTab, page]);
 
   // Login Devices Logic
   const filteredDevices = useMemo(() => {
@@ -330,11 +396,11 @@ const AuditHall = () => {
 
   return (
     <div id="printable-content" className="space-y-6 animate-fade-in-up pb-10">
-      {selectedDbLog && <SnapshotModal log={selectedDbLog} onClose={() => setSelectedDbLog(null)} />}
+      {selectedDbLog && <SnapshotModal logSummary={selectedDbLog} onClose={() => setSelectedDbLog(null)} />}
       {deviceModalData && <LoginHistoryModal deviceName={deviceModalData.name} records={deviceModalData.records} onClose={() => setDeviceModalData(null)} onKickOut={handleKickOut} />}
       
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold dark:text-white flex items-center gap-2">
+        <h2 className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-violet-500 bg-clip-text text-transparent flex items-center gap-2 select-none">
             <ShieldCheck className="w-6 h-6 text-purple-500" /> 审计大厅
         </h2>
         {activeTab === 'operations' && (
@@ -415,53 +481,58 @@ const AuditHall = () => {
                           <select 
                             value={selectedAccount} 
                             onChange={e => setSelectedAccount(e.target.value)} 
-                            className="w-full p-2 border rounded-xl bg-gray-50 dark:bg-gray-700 dark:border-gray-600 outline-none font-bold"
+                            className="w-full p-2 border rounded-xl bg-gray-50 dark:bg-gray-700 dark:border-gray-600 outline-none"
                           >
-                              <option value="">-- 请选择账户 --</option>
-                              {availableUsers.map(u => <option key={u.id} value={u.username}>{u.username}</option>)}
+                              <option value="">-- 选择账户 --</option>
+                              {availableUsers.map(u => (
+                                  <option key={u.id} value={u.username}>{u.username}</option>
+                              ))}
                           </select>
                       </div>
                   </div>
 
-                  {selectedAccount ? (
-                      <div className="space-y-4">
-                          <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl text-center text-sm text-blue-800 dark:text-blue-200">
-                              <span className="font-bold">{selectedAccount}</span> 过去 28 天内曾在这些设备上登录过 棱镜 账号
-                          </div>
-                          <div className="space-y-3">
-                              {filteredDevices.map((dev: any, idx: number) => (
-                                  <div key={idx} className="flex justify-between items-center p-4 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-100 dark:border-gray-700 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onClick={() => setDeviceModalData({name: dev.device_name, records: dev.records})}>
-                                      <div className="flex items-center gap-3">
-                                          <div className="w-10 h-10 bg-white dark:bg-gray-600 rounded-full flex items-center justify-center shadow-sm relative">
-                                              {dev.device_name.includes('Mobile') ? <Smartphone className="w-5 h-5 text-blue-500"/> : <Monitor className="w-5 h-5 text-gray-500"/>}
-                                              {dev.activeCount > 0 && <span className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 border-2 border-white dark:border-gray-700 rounded-full"></span>}
-                                          </div>
-                                          <div>
-                                              <div className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
-                                                  {dev.device_name}
-                                                  {dev.activeCount > 0 && <span className="text-xs bg-green-100 text-green-700 px-1.5 rounded">{dev.activeCount} 活跃</span>}
-                                              </div>
-                                              <div className="text-xs text-gray-400">共登录 {dev.count} 次</div>
-                                          </div>
-                                      </div>
-                                      <div className="flex items-center gap-2">
-                                          {dev.activeCount > 0 && (
-                                              <button 
-                                                onClick={(e) => { e.stopPropagation(); handleKickDevice(dev.device_name); }} 
-                                                className="px-3 py-1.5 bg-red-100 text-red-600 rounded-lg text-xs font-bold hover:bg-red-200 transition-colors flex items-center gap-1 z-10"
-                                              >
-                                                 <Power className="w-3 h-3"/> 强制下线
-                                              </button>
-                                          )}
-                                          <ChevronRight className="w-5 h-5 text-gray-400"/>
-                                      </div>
-                                  </div>
-                              ))}
-                              {filteredDevices.length === 0 && <div className="text-center text-gray-400 py-10">该用户近期无登录记录</div>}
-                          </div>
+                  {!selectedAccount ? (
+                      <div className="text-center text-gray-400 py-10 flex flex-col items-center">
+                          <Smartphone className="w-12 h-12 mb-2 opacity-50"/>
+                          <p>请选择一个账户以查看其设备登录历史</p>
                       </div>
                   ) : (
-                      <div className="text-center text-gray-400 py-20">请先在上方选择要查询的账户</div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {filteredDevices.map((device, i) => (
+                              <div key={i} className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-100 dark:border-gray-600 hover:shadow-md transition-shadow">
+                                  <div className="flex justify-between items-start mb-2">
+                                      <div className="flex items-center gap-2">
+                                          {device.device_name.includes('Mobile') ? <Smartphone className="w-5 h-5 text-blue-500"/> : <Monitor className="w-5 h-5 text-gray-500"/>}
+                                          <h4 className="font-bold text-sm max-w-[150px] truncate" title={device.device_name}>{device.device_name}</h4>
+                                      </div>
+                                      {device.activeCount > 0 && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full animate-pulse font-bold">{device.activeCount} 在线</span>}
+                                  </div>
+                                  <div className="text-xs text-gray-500 space-y-1">
+                                      <p className="flex items-center gap-1"><Globe className="w-3 h-3"/> {device.records[0].ip_address}</p>
+                                      <p className="flex items-center gap-1"><Calendar className="w-3 h-3"/> 最近: {new Date(device.last_login).toLocaleDateString()}</p>
+                                      <p>近30天登录: {device.count} 次</p>
+                                  </div>
+                                  <div className="mt-4 pt-3 border-t dark:border-gray-600 flex gap-2">
+                                      <button 
+                                        onClick={() => setDeviceModalData({ name: device.device_name, records: device.records })}
+                                        className="flex-1 py-1.5 bg-white dark:bg-gray-700 border dark:border-gray-600 rounded text-xs font-bold hover:bg-gray-50 transition-colors"
+                                      >
+                                          查看详情
+                                      </button>
+                                      {device.activeCount > 0 && (
+                                          <button 
+                                            onClick={() => handleKickDevice(device.device_name)}
+                                            className="px-3 py-1.5 bg-red-50 dark:bg-red-900/20 text-red-600 rounded text-xs font-bold hover:bg-red-100 transition-colors"
+                                            title="强制下线该设备所有会话"
+                                          >
+                                              <Power className="w-3 h-3"/>
+                                          </button>
+                                      )}
+                                  </div>
+                              </div>
+                          ))}
+                          {filteredDevices.length === 0 && <p className="col-span-full text-center text-gray-400 py-10">近30天无登录记录</p>}
+                      </div>
                   )}
               </div>
           )}

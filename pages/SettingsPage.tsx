@@ -449,15 +449,15 @@ const SettingsPage = () => {
         </div>
       )}
       
-      {/* 33. Theme Settings (Simplified for brevity as it was correct) */}
+      {/* 33. Theme Settings */}
       <div>
         <SectionHeader id="theme" title="应用主题" icon={Palette} colorClass="bg-pink-500" />
         {openSection === 'theme' && (
             <div className="p-6 bg-white dark:bg-gray-800 rounded-b-xl border-x border-b border-gray-100 dark:border-gray-700 flex flex-wrap gap-4 animate-slide-down">
                 {THEMES.map(t => (
                     <button key={t.mode} onClick={() => setTheme(t.mode)} className={`flex items-center gap-2 px-4 py-3 rounded-xl border-2 transition-all ${theme === t.mode ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-transparent bg-gray-100 dark:bg-gray-700'}`}>
-                        <div className="w-6 h-6 rounded-full border shadow-sm" style={{ backgroundColor: t.bg }}></div>
-                        <span className="font-bold text-sm" style={{ color: t.mode.includes('dark') ? '#fff' : '#333' }}>{t.name}</span>
+                        <div className="w-6 h-6 rounded-full border shadow-sm flex items-center justify-center text-[10px] font-bold" style={{ backgroundColor: t.bg, color: t.text }}>Aa</div>
+                        <span className={`font-bold text-sm ${theme === t.mode ? 'text-blue-700 dark:text-blue-300' : 'text-gray-700 dark:text-gray-300'}`}>{t.name}</span>
                     </button>
                 ))}
             </div>

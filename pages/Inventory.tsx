@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Search, ChevronDown, ChevronRight, Plus, Package, FileText, Edit2, X, Save, ArrowRightLeft, Info, ScanLine, Filter, MapPin, Trash2, Image as ImageIcon, ChevronLeft, CheckSquare, Square, Box, Loader2, Calculator, AlertTriangle, Calendar, Camera, Zap, ShoppingCart, MinusCircle, PlusCircle, CheckCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -652,7 +653,15 @@ const Inventory = () => {
   const filteredProducts = useMemo(() => {
     return isolatedProducts.filter(p => {
         const searchLower = searchTerm.toLowerCase();
-        const matchesSearch = p.name.includes(searchTerm) || p.sku.toLowerCase().includes(searchLower) || p.batches.some(b => b.batchNumber.toLowerCase().includes(searchLower));
+        // Update matching logic
+        const matchesSearch = 
+            p.name.toLowerCase().includes(searchLower) || 
+            p.sku.toLowerCase().includes(searchLower) || 
+            p.id.toLowerCase().includes(searchLower) || // Search Product ID
+            p.batches.some(b => 
+                b.batchNumber.toLowerCase().includes(searchLower) || 
+                b.id.toLowerCase().includes(searchLower) // Search Batch ID
+            );
         const matchesCategory = categoryFilter === 'ALL' || p.category === categoryFilter;
         return matchesSearch && matchesCategory;
     });
@@ -967,6 +976,13 @@ const Inventory = () => {
   const isParentView = currentStore.isParent;
   const canOperate = !isParentView && user?.role !== RoleLevel.GUEST && !currentStore.viewerIds?.includes(user?.id || '');
 
+  // Helper for cell borders when expanded
+  const cellBorderClass = (isExpanded: boolean, isFirst: boolean, isLast: boolean) => {
+      if (!isExpanded) return 'p-4 border-b border-gray-100 dark:border-gray-700'; // Default bottom border
+      // Expanded: Top Blue Border, No Bottom Border
+      return `p-4 border-t-2 border-blue-500 dark:border-blue-400 border-b-0 ${isFirst ? 'border-l-2 rounded-tl-2xl' : ''} ${isLast ? 'border-r-2 rounded-tr-2xl' : ''}`;
+  };
+
   return (
     <div className="space-y-6 animate-fade-in-up pb-20">
       {/* POS Overlay Mode */}
@@ -990,7 +1006,9 @@ const Inventory = () => {
       {lightboxSrc && <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
 
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-        <h2 className="text-2xl font-bold dark:text-white flex items-center gap-2">库存管理 {isDeleteMode && <span className="text-sm bg-red-100 text-red-600 px-2 rounded font-normal">批量删除模式</span>}</h2>
+        <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-500 bg-clip-text text-transparent flex items-center gap-2 select-none">
+            库存管理 {isDeleteMode && <span className="text-sm bg-red-100 text-red-600 px-2 rounded font-normal">批量删除模式</span>}
+        </h2>
         {canOperate && (
             <div className="flex items-center gap-2">
                 {isDeleteMode ? (
@@ -1010,7 +1028,7 @@ const Inventory = () => {
         <div className="flex gap-2 w-full md:w-auto">
              <div className="relative flex-1 md:w-64">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <input type="text" placeholder="搜索商品/SKU/批号..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-10 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 outline-none" />
+                <input type="text" placeholder="搜索商品/SKU/批号/ID..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-10 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 outline-none" />
                 <button onClick={() => setShowScanner(true)} className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 bg-gray-100 dark:bg-gray-700 rounded hover:text-blue-500"><ScanLine className="w-4 h-4"/></button>
              </div>
              {!isParentView && (
@@ -1035,7 +1053,8 @@ const Inventory = () => {
          ) : (
              <>
              <div className="overflow-x-auto">
-                 <table className="w-full text-left border-collapse">
+                 {/* Changed border-collapse to border-separate border-spacing-0 for border-radius to work */}
+                 <table className="w-full text-left border-separate border-spacing-0">
                      <thead className="bg-gray-50 dark:bg-gray-900/50 text-sm" style={{ color: 'var(--text-secondary)' }}>
                          <tr>
                              {isDeleteMode && <th className="p-4 w-10"></th>}
@@ -1043,7 +1062,7 @@ const Inventory = () => {
                              <th className="p-4">商品名称 / SKU</th>
                              <th className="p-4">分类</th>
                              <th className="p-4 text-center">当前总库存</th>
-                             <th className="p-4 text-right">操作</th>
+                             <th className="p-4 pr-12 text-right">操作</th>
                          </tr>
                      </thead>
                      <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
@@ -1053,30 +1072,37 @@ const Inventory = () => {
                              const isSelected = selectedProducts.has(product.id);
                              return (
                                  <React.Fragment key={product.id}>
-                                     <tr className={`group transition-colors ${isExpanded ? 'bg-blue-50/50 dark:bg-blue-900/10' : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'}`}>
+                                     {/* Parent Row Styling - Deeper Purple (bg-purple-200) when expanded */}
+                                     <tr className={`group transition-colors ${isExpanded ? 'bg-purple-200 dark:bg-purple-900/60' : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'}`}>
                                          {isDeleteMode && (
-                                             <td className="p-4 text-center"><div onClick={() => toggleSelectProduct(product.id)} className="cursor-pointer">{isSelected ? <CheckSquare className="w-5 h-5 text-blue-500"/> : <Square className="w-5 h-5 text-gray-300"/>}</div></td>
+                                             <td className={`text-center ${cellBorderClass(isExpanded, true, false)}`}>
+                                                 <div onClick={() => toggleSelectProduct(product.id)} className="cursor-pointer">{isSelected ? <CheckSquare className="w-5 h-5 text-blue-500"/> : <Square className="w-5 h-5 text-gray-300"/>}</div>
+                                             </td>
                                          )}
-                                         <td className="p-4 cursor-pointer text-center" onClick={() => toggleExpand(product.id)}>
+                                         <td className={`cursor-pointer text-center ${cellBorderClass(isExpanded, !isDeleteMode, false)}`} onClick={() => toggleExpand(product.id)}>
                                              {isExpanded ? <ChevronDown className="w-4 h-4 text-blue-500"/> : <ChevronRight className="w-4 h-4 text-gray-400"/>}
                                          </td>
-                                         <td className="p-4">
+                                         <td className={cellBorderClass(isExpanded, false, false)}>
                                              <div className="flex items-center gap-3">
                                                  <div className="w-12 h-12 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center overflow-hidden border dark:border-gray-600 cursor-pointer shadow-sm hover:shadow-md transition-shadow" onClick={() => product.image_url && setLightboxSrc(getDirectImageUrl(product.image_url)!)}>
                                                      {product.image_url ? <img src={getDirectImageUrl(product.image_url)} className="w-full h-full object-cover" alt={product.name}/> : <Package className="w-6 h-6 text-gray-400"/>}
                                                  </div>
                                                  <IdRevealer id={product.id}>
                                                     <div className="font-bold text-gray-800 dark:text-gray-200">{product.name}</div>
-                                                    <div className="text-xs text-gray-400 font-mono">{product.sku}</div>
+                                                    {/* Updated SKU text color to darker */}
+                                                    <div className="text-xs text-gray-600 dark:text-gray-400 font-mono font-bold">{product.sku}</div>
                                                  </IdRevealer>
                                              </div>
                                          </td>
-                                         <td className="p-4 text-sm"><span className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-500">{product.category}</span></td>
-                                         <td className="p-4 text-center font-bold text-gray-700 dark:text-gray-300">
+                                         <td className={`text-sm ${cellBorderClass(isExpanded, false, false)}`}>
+                                             {/* Updated Category badge color to bright green */}
+                                             <span className="px-2 py-1 rounded bg-green-100 dark:bg-green-900/30 text-green-600 font-bold">{product.category}</span>
+                                         </td>
+                                         <td className={`text-center font-bold text-gray-700 dark:text-gray-300 ${cellBorderClass(isExpanded, false, false)}`}>
                                              <span className="text-lg">{big}</span><span className="text-xs text-gray-400 mx-1">{product.unitBig || '整'}</span>
                                              <span className="text-lg ml-2">{small}</span><span className="text-xs text-gray-400 mx-1">{product.unitSmall || '散'}</span>
                                          </td>
-                                         <td className="p-4 text-right">
+                                         <td className={`pr-12 text-right ${cellBorderClass(isExpanded, false, true)}`}>
                                              <div className="flex justify-end gap-2">
                                                  {canOperate && (
                                                     <>
@@ -1089,20 +1115,21 @@ const Inventory = () => {
                                      </tr>
                                      {isExpanded && (
                                          <tr>
-                                             <td colSpan={isDeleteMode ? 7 : 6} className="p-0 bg-gray-50 dark:bg-gray-900/50 border-b dark:border-gray-700 shadow-inner">
-                                                 <div className="p-4 pl-16">
+                                             <td colSpan={isDeleteMode ? 7 : 6} className="p-0 border-b-2 border-l-2 border-r-2 border-blue-500 dark:border-blue-400 rounded-b-2xl bg-white dark:bg-gray-900 transition-all">
+                                                 {/* Rounded Box Container */}
+                                                 <div className="my-3 mx-4 ml-16 rounded-2xl border-2 border-blue-100 dark:border-blue-900 bg-white dark:bg-gray-800 overflow-hidden shadow-sm">
                                                     <table className="w-full text-sm">
-                                                        <thead>
-                                                            <tr className="text-gray-400 border-b dark:border-gray-700">
-                                                                {isParentView && <th className="pb-2 pl-2 text-left font-medium">所属门店</th>}
-                                                                <th className="pb-2 pl-2 text-left font-medium">批号</th>
-                                                                <th className="pb-2 text-left font-medium">有效期</th>
-                                                                <th className="pb-2 text-center font-medium">换算制</th>
-                                                                <th className="pb-2 text-center font-medium">库存详情</th>
-                                                                <th className="pb-2 text-right font-medium">操作</th>
+                                                        <thead className="bg-gray-50 dark:bg-gray-900/50 text-gray-500 border-b border-blue-100 dark:border-blue-900/50">
+                                                            <tr>
+                                                                {isParentView && <th className="pb-2 pt-3 pl-3 text-left font-medium">所属门店</th>}
+                                                                <th className="pb-2 pt-3 pl-3 text-left font-medium">批号</th>
+                                                                <th className="pb-2 pt-3 text-left font-medium">有效期</th>
+                                                                <th className="pb-2 pt-3 text-center font-medium">换算制</th>
+                                                                <th className="pb-2 pt-3 text-center font-medium">库存详情</th>
+                                                                <th className="pb-2 pt-3 pr-3 text-right font-medium">操作</th>
                                                             </tr>
                                                         </thead>
-                                                        <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                                                        <tbody className="divide-y divide-blue-50 dark:divide-blue-900/30">
                                                             {product.batches.map(batch => {
                                                                 const isExpired = batch.expiryDate && new Date(batch.expiryDate) < new Date();
                                                                 const storeName = isParentView ? (stores.find(s => s.id === product.storeId)?.name || '未知') : '';
@@ -1113,11 +1140,13 @@ const Inventory = () => {
                                                                 const bSmall = bTotal % effectiveBRate;
                                                                 
                                                                 return (
-                                                                    <tr key={batch.id} className="hover:bg-white dark:hover:bg-gray-800 transition-colors">
+                                                                    // Child Rows Styling - Light Green
+                                                                    <tr key={batch.id} className="bg-green-50/60 dark:bg-green-900/10 hover:bg-green-100 dark:hover:bg-green-900/20 transition-colors">
                                                                         {isParentView && (
-                                                                            <td className="py-3 pl-2 text-blue-600 dark:text-blue-400 font-bold text-xs">{storeName}</td>
+                                                                            <td className="py-3 pl-3 text-blue-600 dark:text-blue-400 font-bold text-xs">{storeName}</td>
                                                                         )}
-                                                                        <td className="py-3 pl-2 font-mono font-bold" style={{color: 'var(--accent-color)'}}>
+                                                                        {/* Updated Batch Number color to blue */}
+                                                                        <td className="py-3 pl-3 font-mono font-bold text-blue-600 dark:text-blue-400">
                                                                             <IdRevealer id={batch.id}>
                                                                                 {batch.batchNumber}
                                                                             </IdRevealer>
@@ -1135,7 +1164,7 @@ const Inventory = () => {
                                                                         <td className="py-3 text-center font-bold">
                                                                             {bBig}{product.unitBig || '整'} {bSmall}{product.unitSmall || '散'}
                                                                         </td>
-                                                                        <td className="py-3 text-right">
+                                                                        <td className="py-3 pr-3 text-right">
                                                                             <div className="flex justify-end gap-2">
                                                                                 {canOperate ? (
                                                                                     <>
@@ -1151,7 +1180,7 @@ const Inventory = () => {
                                                                 );
                                                             })}
                                                             {product.batches.length === 0 && (
-                                                                <tr><td colSpan={isParentView ? 7 : 6} className="py-4 text-center text-gray-400 italic">暂无批号数据</td></tr>
+                                                                <tr><td colSpan={isParentView ? 7 : 6} className="py-6 text-center text-gray-400 italic bg-green-50/30 dark:bg-green-900/5">暂无批号数据</td></tr>
                                                             )}
                                                         </tbody>
                                                     </table>

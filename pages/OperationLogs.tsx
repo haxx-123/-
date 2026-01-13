@@ -1,4 +1,5 @@
 
+// ... existing imports ...
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Filter, RotateCcw, AlertTriangle, Search, X, Calendar, User as UserIcon, Tag, ScanLine, ChevronLeft, ChevronRight, Copy } from 'lucide-react';
 import { formatDate } from '../constants';
@@ -9,6 +10,7 @@ import * as XLSX from 'xlsx';
 import { supabase, syncProductStock } from '../supabase';
 import BarcodeScanner from '../components/BarcodeScanner';
 
+// ... (retain helpers and components) ...
 const getActionLabel = (type: LogAction) => {
     switch (type) {
         case LogAction.ENTRY_INBOUND: return '入库';
@@ -225,7 +227,13 @@ const OperationLogs = () => {
       if (logPermission === 'D' && log.operator_id !== user?.id) return false;
       
       // Filters
-      const matchesSearch = log.change_desc.includes(searchTerm) || log.operator_name.includes(searchTerm) || log.target_name.includes(searchTerm);
+      const lowerTerm = searchTerm.toLowerCase();
+      const matchesSearch = 
+        log.change_desc.toLowerCase().includes(lowerTerm) || 
+        log.operator_name.toLowerCase().includes(lowerTerm) || 
+        log.target_name.toLowerCase().includes(lowerTerm) ||
+        log.target_id.toLowerCase().includes(lowerTerm);
+
       const matchesOperator = filters.operator ? log.operator_name === filters.operator : true;
       const matchesType = filters.actionType ? log.action_type === filters.actionType : true;
       
@@ -316,13 +324,13 @@ const OperationLogs = () => {
       
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
         <div className="flex items-center gap-2">
-            <h2 className="text-2xl font-bold dark:text-white">操作日志</h2>
+            <h2 className="text-2xl font-bold bg-gradient-to-r from-orange-600 to-red-500 bg-clip-text text-transparent select-none">操作日志</h2>
             <span className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-gray-500">当前门店: {currentStore.name}</span>
         </div>
         <div className="flex gap-2 w-full md:w-auto">
            <div className="relative flex-1 md:w-64">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <input type="text" placeholder="搜索日志..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-10 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 outline-none" />
+              <input type="text" placeholder="搜索日志/ID..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-9 pr-10 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 outline-none" />
               <button onClick={() => setShowScanner(true)} className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 bg-gray-100 dark:bg-gray-700 rounded hover:text-blue-500"><ScanLine className="w-4 h-4"/></button>
            </div>
            <button onClick={() => setShowFilter(true)} className={`px-4 py-2 border dark:border-gray-700 rounded-xl flex items-center gap-2 transition-colors ${Object.keys(filters).length > 0 ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700'}`}><Filter className="w-4 h-4" /> 筛选</button>

@@ -1,6 +1,8 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Camera, CheckCircle, AlertTriangle, UserX, Sun, ScanFace, Activity, Search } from 'lucide-react';
+// IMPORTANT: Import faceapi from utils to ensure we use the same instance with loaded models
+import { loadModels, faceapi } from '../utils/faceApi';
 
 interface Candidate {
     id: string;
@@ -14,12 +16,6 @@ interface FaceIDProps {
   storedFaceData?: number[]; // For 1:1 Verify
   candidates?: Candidate[];  // For 1:N Identify
   mode?: 'register' | 'verify' | 'identify'; 
-}
-
-declare global {
-  interface Window {
-    faceapi: any;
-  }
 }
 
 // 核心配置参数
@@ -55,30 +51,19 @@ const FaceID: React.FC<FaceIDProps> = ({ onSuccess, onCancel, storedFaceData, ca
 
   // Load Models
   useEffect(() => {
-    const loadModels = async () => {
+    const init = async () => {
       try {
-        if (!window.faceapi) {
-            setFeedback("FaceAPI 库未加载");
-            setStatus('error');
-            return;
-        }
-        setFeedback("正在加载 AI 模型...");
-        const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
-        
-        await Promise.all([
-          window.faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-          window.faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-          window.faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
-        ]);
-        
+        setFeedback("正在加载本地 AI 模型...");
+        // Use the unified utility to load models strictly from local
+        await loadModels();
         startCamera();
-      } catch (err) {
+      } catch (err: any) {
         console.error("Model Load Error", err);
-        setFeedback("模型加载失败，请检查网络");
+        setFeedback(err.message || "无法加载本地模型");
         setStatus('error');
       }
     };
-    loadModels();
+    init();
 
     return () => stopCamera();
   }, []);
@@ -144,139 +129,151 @@ const FaceID: React.FC<FaceIDProps> = ({ onSuccess, onCancel, storedFaceData, ca
       if (!videoRef.current || !canvasRef.current) return;
       
       const displaySize = { width: 320, height: 240 }; // 内部处理分辨率，保持流畅
-      window.faceapi.matchDimensions(canvasRef.current, displaySize);
+      faceapi.matchDimensions(canvasRef.current, displaySize);
 
       // 任务二：强制统一模型配置 (录入和验证必须一致)
-      const options = new window.faceapi.TinyFaceDetectorOptions(CONFIG.DETECTOR_OPTS);
+      const options = new faceapi.TinyFaceDetectorOptions(CONFIG.DETECTOR_OPTS);
 
       intervalRef.current = setInterval(async () => {
           if (!videoRef.current || !canvasRef.current) return;
 
-          // 1. Detect Face
-          const detection = await window.faceapi.detectSingleFace(videoRef.current, options)
-            .withFaceLandmarks()
-            .withFaceDescriptor();
+          // --- 安全门禁 Guard Clause ---
+          // 确保 TinyFaceDetector 已加载完毕再执行检测
+          // Explicitly check for params to avoid "TinyYolov2 - load model before inference" error
+          if (!faceapi.nets.tinyFaceDetector.params) {
+              console.warn("AI 模型尚未就绪，跳过本次检测");
+              return;
+          }
 
-          const ctx = canvasRef.current.getContext('2d');
-          if (!ctx) return;
+          try {
+              // 1. Detect Face
+              const detection = await faceapi.detectSingleFace(videoRef.current, options)
+                .withFaceLandmarks()
+                .withFaceDescriptor();
 
-          // Clear previous draw
-          ctx.clearRect(0, 0, displaySize.width, displaySize.height);
+              const ctx = canvasRef.current.getContext('2d');
+              if (!ctx) return;
 
-          // 2. Draw Video frame to canvas for brightness check (Hidden analysis)
-          ctx.drawImage(videoRef.current, 0, 0, displaySize.width, displaySize.height);
-          const currentBrightness = checkBrightness(ctx, displaySize.width, displaySize.height);
-          
-          // Clear again to draw landmarks cleanly
-          ctx.clearRect(0, 0, displaySize.width, displaySize.height);
+              // Clear previous draw
+              ctx.clearRect(0, 0, displaySize.width, displaySize.height);
 
-          if (detection) {
-              const dims = window.faceapi.resizeResults(detection, displaySize);
-              const box = dims.detection.box;
-              const score = detection.detection.score;
-              const faceRatio = box.width / displaySize.width;
+              // 2. Draw Video frame to canvas for brightness check (Hidden analysis)
+              ctx.drawImage(videoRef.current, 0, 0, displaySize.width, displaySize.height);
+              const currentBrightness = checkBrightness(ctx, displaySize.width, displaySize.height);
+              
+              // Clear again to draw landmarks cleanly
+              ctx.clearRect(0, 0, displaySize.width, displaySize.height);
 
-              // Draw Box
-              const drawBox = new window.faceapi.draw.DrawBox(box, { 
-                  label: mode === 'register' ? `Q: ${(score*100).toFixed(0)}%` : (mode === 'identify' ? 'Identifying...' : 'Face'), 
-                  boxColor: status === 'success' ? 'green' : 'blue' 
-              });
-              drawBox.draw(canvasRef.current);
+              if (detection) {
+                  const dims = faceapi.resizeResults(detection, displaySize);
+                  const box = dims.detection.box;
+                  const score = detection.detection.score;
+                  const faceRatio = box.width / displaySize.width;
 
-              setDebugInfo(prev => ({ ...prev, brightness: currentBrightness, score: score }));
+                  // Draw Box
+                  const drawBox = new faceapi.draw.DrawBox(box, { 
+                      label: mode === 'register' ? `Q: ${(score*100).toFixed(0)}%` : (mode === 'identify' ? 'Identifying...' : 'Face'), 
+                      boxColor: status === 'success' ? 'green' : 'blue' 
+                  });
+                  drawBox.draw(canvasRef.current);
 
-              // === 任务一：录入模式 - 严格质量控制 ===
-              if (mode === 'register') {
-                  // 1. 亮度检查
-                  if (currentBrightness < CONFIG.REG_MIN_BRIGHTNESS) {
-                      setFeedback("光线太暗，请在明亮处录入");
-                      stabilityCounter.current = 0;
-                      return;
-                  }
-                  // 2. 尺寸检查 (太远)
-                  if (faceRatio < CONFIG.REG_MIN_FACE_RATIO) {
-                      setFeedback("请靠近一点");
-                      stabilityCounter.current = 0;
-                      return;
-                  }
-                  // 3. 分数门禁
-                  if (score < CONFIG.REG_MIN_SCORE) {
-                      setFeedback("请保持头部静止，正对屏幕");
-                      stabilityCounter.current = 0;
-                      return;
-                  }
-                  // 4. 防抖与优选 (连续 N 帧合格)
-                  stabilityCounter.current += 1;
-                  setFeedback(`正在录入... ${stabilityCounter.current}/${CONFIG.REG_STABILITY_FRAMES}`);
-                  
-                  if (!bestDescriptorRef.current || score > bestDescriptorRef.current.score) {
-                      bestDescriptorRef.current = { score, data: detection.descriptor };
-                  }
+                  setDebugInfo(prev => ({ ...prev, brightness: currentBrightness, score: score }));
 
-                  if (stabilityCounter.current >= CONFIG.REG_STABILITY_FRAMES) {
-                      stopCamera();
-                      setStatus('success');
-                      setFeedback("录入成功！");
-                      const finalDescriptor = Array.from(bestDescriptorRef.current?.data || detection.descriptor) as number[];
-                      onSuccess(finalDescriptor);
-                  }
-              } 
-              // === 任务二：验证模式 (1:1) ===
-              else if (mode === 'verify') {
-                  if (!storedFaceData || storedFaceData.length === 0) {
-                      stopCamera();
-                      setStatus('error');
-                      setFeedback('该账号未录入人脸数据');
-                      return;
-                  }
-                  const storedDescriptor = new Float32Array(storedFaceData);
-                  const distance = window.faceapi.euclideanDistance(detection.descriptor, storedDescriptor);
-                  setDebugInfo(prev => ({ ...prev, distance }));
+                  // === 任务一：录入模式 - 严格质量控制 ===
+                  if (mode === 'register') {
+                      // 1. 亮度检查
+                      if (currentBrightness < CONFIG.REG_MIN_BRIGHTNESS) {
+                          setFeedback("光线太暗，请在明亮处录入");
+                          stabilityCounter.current = 0;
+                          return;
+                      }
+                      // 2. 尺寸检查 (太远)
+                      if (faceRatio < CONFIG.REG_MIN_FACE_RATIO) {
+                          setFeedback("请靠近一点");
+                          stabilityCounter.current = 0;
+                          return;
+                      }
+                      // 3. 分数门禁
+                      if (score < CONFIG.REG_MIN_SCORE) {
+                          setFeedback("请保持头部静止，正对屏幕");
+                          stabilityCounter.current = 0;
+                          return;
+                      }
+                      // 4. 防抖与优选 (连续 N 帧合格)
+                      stabilityCounter.current += 1;
+                      setFeedback(`正在录入... ${stabilityCounter.current}/${CONFIG.REG_STABILITY_FRAMES}`);
+                      
+                      if (!bestDescriptorRef.current || score > bestDescriptorRef.current.score) {
+                          bestDescriptorRef.current = { score, data: detection.descriptor };
+                      }
 
-                  if (distance < CONFIG.VERIFY_THRESHOLD) {
-                      stopCamera();
-                      setStatus('success');
-                      setFeedback("验证通过");
-                      setTimeout(() => onSuccess(), 800);
-                  } else {
-                      if (distance > 0.8) setFeedback("不是同一个人");
-                      else setFeedback("请调整角度或靠近一点");
-                  }
-              }
-              // === 新增：识别模式 (1:N) ===
-              else if (mode === 'identify') {
-                  if (!candidates || candidates.length === 0) {
-                      setStatus('error');
-                      setFeedback('无可用的人脸库数据');
-                      return;
-                  }
+                      if (stabilityCounter.current >= CONFIG.REG_STABILITY_FRAMES) {
+                          stopCamera();
+                          setStatus('success');
+                          setFeedback("录入成功！");
+                          const finalDescriptor = Array.from(bestDescriptorRef.current?.data || detection.descriptor) as number[];
+                          onSuccess(finalDescriptor);
+                      }
+                  } 
+                  // === 任务二：验证模式 (1:1) ===
+                  else if (mode === 'verify') {
+                      if (!storedFaceData || storedFaceData.length === 0) {
+                          stopCamera();
+                          setStatus('error');
+                          setFeedback('该账号未录入人脸数据');
+                          return;
+                      }
+                      const storedDescriptor = new Float32Array(storedFaceData);
+                      const distance = faceapi.euclideanDistance(detection.descriptor, storedDescriptor);
+                      setDebugInfo(prev => ({ ...prev, distance }));
 
-                  let bestMatch = { distance: 1.0, id: '', username: '' };
-                  
-                  // Simple Linear Search
-                  for (const candidate of candidates) {
-                      const stored = new Float32Array(candidate.descriptor);
-                      const dist = window.faceapi.euclideanDistance(detection.descriptor, stored);
-                      if (dist < bestMatch.distance) {
-                          bestMatch = { distance: dist, id: candidate.id, username: candidate.username };
+                      if (distance < CONFIG.VERIFY_THRESHOLD) {
+                          stopCamera();
+                          setStatus('success');
+                          setFeedback("验证通过");
+                          setTimeout(() => onSuccess(), 800);
+                      } else {
+                          if (distance > 0.8) setFeedback("不是同一个人");
+                          else setFeedback("请调整角度或靠近一点");
                       }
                   }
+                  // === 新增：识别模式 (1:N) ===
+                  else if (mode === 'identify') {
+                      if (!candidates || candidates.length === 0) {
+                          setStatus('error');
+                          setFeedback('无可用的人脸库数据');
+                          return;
+                      }
 
-                  setDebugInfo(prev => ({ ...prev, distance: bestMatch.distance, matchName: bestMatch.username }));
+                      let bestMatch = { distance: 1.0, id: '', username: '' };
+                      
+                      // Simple Linear Search
+                      for (const candidate of candidates) {
+                          const stored = new Float32Array(candidate.descriptor);
+                          const dist = faceapi.euclideanDistance(detection.descriptor, stored);
+                          if (dist < bestMatch.distance) {
+                              bestMatch = { distance: dist, id: candidate.id, username: candidate.username };
+                          }
+                      }
 
-                  if (bestMatch.distance < CONFIG.VERIFY_THRESHOLD) {
-                      stopCamera();
-                      setStatus('success');
-                      setFeedback(`欢迎回来，${bestMatch.username}`);
-                      setTimeout(() => onSuccess(bestMatch.id), 800);
-                  } else {
-                      setFeedback("未匹配到用户，请靠近或调整角度");
+                      setDebugInfo(prev => ({ ...prev, distance: bestMatch.distance, matchName: bestMatch.username }));
+
+                      if (bestMatch.distance < CONFIG.VERIFY_THRESHOLD) {
+                          stopCamera();
+                          setStatus('success');
+                          setFeedback(`欢迎回来，${bestMatch.username}`);
+                          setTimeout(() => onSuccess(bestMatch.id), 800);
+                      } else {
+                          setFeedback("未匹配到用户，请靠近或调整角度");
+                      }
                   }
+              } else {
+                  setFeedback(mode === 'register' ? "未检测到人脸" : "寻找人脸中...");
+                  stabilityCounter.current = 0;
+                  setDebugInfo({});
               }
-          } else {
-              setFeedback(mode === 'register' ? "未检测到人脸" : "寻找人脸中...");
-              stabilityCounter.current = 0;
-              setDebugInfo({});
+          } catch (error) {
+              console.error("Face detection loop error:", error);
           }
       }, 500); // Check every 500ms
   };

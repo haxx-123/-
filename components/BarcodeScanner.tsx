@@ -35,6 +35,12 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose, contin
 
     const startScanner = async () => {
         try {
+            // Safety check: Ensure element is mounted
+            if (!document.getElementById("reader")) {
+                console.warn("Scanner mount aborted: container missing");
+                return;
+            }
+
             const html5QrCode = new window.Html5Qrcode("reader");
             scannerRef.current = html5QrCode;
 
