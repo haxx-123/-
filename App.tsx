@@ -12,7 +12,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import html2canvas from 'html2canvas';
 import UAParser from 'ua-parser-js';
 
-import { ThemeMode, RoleLevel, User, Store, Product, OperationLog, LoginRecord, Announcement } from './types';
+import { ThemeMode, RoleLevel, User, Store, Product, OperationLog, LoginRecord, Announcement, PermissionTemplate } from './types';
 import { APP_LOGO_URL, SIGNATURE_URL } from './constants';
 import UsernameBadge from './components/UsernameBadge';
 import FaceID from './components/FaceID';
@@ -68,6 +68,8 @@ interface AppContextType {
   setStores: React.Dispatch<React.SetStateAction<Store[]>>;
   announcements: Announcement[];
   setAnnouncements: React.Dispatch<React.SetStateAction<Announcement[]>>;
+  templates: PermissionTemplate[];
+  setTemplates: React.Dispatch<React.SetStateAction<PermissionTemplate[]>>;
   reloadData: () => Promise<void>;
   isSidebarCollapsed: boolean;
   toggleSidebarCollapse: () => void;
@@ -81,6 +83,7 @@ export const useApp = () => {
   return context;
 };
 
+// ... (Retain LoadingScreen, SWUpdateToast, isAnnouncementActive) ...
 const LoadingScreen = () => (
   <div className="flex items-center justify-center h-full w-full min-h-[50vh]">
     <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
@@ -276,6 +279,7 @@ const Sidebar = () => {
   );
 };
 
+// ... (ModalContainer, Login, SplashScreen, PageWrapper, MainLayout remain same) ...
 const ModalContainer = ({ children, isOpen }: React.PropsWithChildren<{ isOpen: boolean }>) => {
   if (!isOpen) return null;
   return (
@@ -470,6 +474,7 @@ const AppContent = () => {
   const [loginRecords, setLoginRecords] = useState<LoginRecord[]>([]);
   const [stores, setStores] = useState<Store[]>([]); 
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [templates, setTemplates] = useState<PermissionTemplate[]>([]);
 
   // ... (Realtime hooks kept as is) ...
   useRealtime('operation_logs', (payload) => {
@@ -527,6 +532,12 @@ const AppContent = () => {
           return { ...p, batches: newBatches };
       }));
   });
+  useRealtime('permission_templates', (payload) => {
+      const { eventType, new: newRow, old: oldRow } = payload;
+      if (eventType === 'INSERT') { setTemplates(prev => [...prev, newRow]); }
+      else if (eventType === 'UPDATE') { setTemplates(prev => prev.map(t => t.id === newRow.id ? newRow : t)); }
+      else if (eventType === 'DELETE') { setTemplates(prev => prev.filter(t => t.id !== oldRow.id)); }
+  });
 
   useEffect(() => {
     if (!user) return;
@@ -549,13 +560,14 @@ const AppContent = () => {
 
   const reloadData = async () => {
     try {
-        const [sData, uData, pData, lData, aData, lrData] = await Promise.all([
+        const [sData, uData, pData, lData, aData, lrData, tData] = await Promise.all([
             supabase.from('stores').select('*'),
             supabase.from('users').select('*'),
             supabase.from('products').select('*, batches(*)'),
             supabase.from('operation_logs').select('*').order('created_at', { ascending: false }),
             supabase.from('announcements').select('*').order('created_at', { ascending: false }),
-            supabase.from('login_records').select('*').order('login_at', { ascending: false })
+            supabase.from('login_records').select('*').order('login_at', { ascending: false }),
+            supabase.from('permission_templates').select('*').order('created_at', { ascending: false })
         ]);
         if (sData.data) {
             const mappedStores = sData.data.map((s: any) => ({ id: String(s.id), name: s.name, isParent: s.is_parent, childrenIds: s.children_ids?.map(String), parentId: s.parent_id ? String(s.parent_id) : undefined, managerIds: s.manager_ids?.map(String), viewerIds: s.viewer_ids?.map(String) }));
@@ -575,6 +587,7 @@ const AppContent = () => {
         if (lData.data) setLogs(lData.data.map((l:any) => ({...l, id: String(l.id), target_id: String(l.target_id)})));
         if (aData.data) setAnnouncements(aData.data.map((a: any) => ({ ...a, id: String(a.id), target_userIds: a.target_user_ids?.map(String) })));
         if (lrData.data) setLoginRecords(lrData.data.map((r:any) => ({...r, id: String(r.id), user_id: String(r.user_id)})));
+        if (tData.data) setTemplates(tData.data as PermissionTemplate[]);
     } catch (e) { console.error("Critical Data Load Error", e); } 
     finally { setAppReady(true); }
   };
@@ -724,7 +737,7 @@ const AppContent = () => {
 
   return (
     <AppContext.Provider value={{ 
-      theme, setTheme, user, login, logout, currentStore, setCurrentStore, isSidebarOpen, toggleSidebar, announcementsOpen, setAnnouncementsOpen, activePopupAnnouncement, setActivePopupAnnouncement, storeManagerOpen, setStoreManagerOpen, setPageActions, handleCopy: pageActions.handleCopy, handleExcel: pageActions.handleExcel, isMobile, products, setProducts, logs, setLogs, users, setUsers, loginRecords, setLoginRecords, stores, setStores, announcements, setAnnouncements, reloadData, isSidebarCollapsed, toggleSidebarCollapse
+      theme, setTheme, user, login, logout, currentStore, setCurrentStore, isSidebarOpen, toggleSidebar, announcementsOpen, setAnnouncementsOpen, activePopupAnnouncement, setActivePopupAnnouncement, storeManagerOpen, setStoreManagerOpen, setPageActions, handleCopy: pageActions.handleCopy, handleExcel: pageActions.handleExcel, isMobile, products, setProducts, logs, setLogs, users, setUsers, loginRecords, setLoginRecords, stores, setStores, announcements, setAnnouncements, templates, setTemplates, reloadData, isSidebarCollapsed, toggleSidebarCollapse
     }}>
       <SplashScreen isReady={appReady} />
       <div style={{ opacity: appReady ? 1 : 0 }} className="transition-opacity duration-500">

@@ -53,6 +53,15 @@ export interface User {
   permissions?: UserPermissions;
 }
 
+export interface PermissionTemplate {
+  id: string;
+  name: string;
+  // role: RoleLevel; // Removed per requirement
+  permissions: UserPermissions; // Detailed permissions
+  created_at?: string;
+  created_by?: string; // Added for data isolation
+}
+
 export interface Store {
   id: string;
   name: string;

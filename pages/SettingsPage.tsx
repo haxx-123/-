@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, ChevronUp, User as UserIcon, Shield, Palette, Plus, Edit, Trash2, X, Save, RefreshCcw, ArrowRight, AlertCircle, ChevronLeft, ChevronRight, UserCheck, Lock, Eye, EyeOff, Layout, FileText, Database, Settings } from 'lucide-react';
+import { ChevronDown, ChevronUp, User as UserIcon, Shield, Palette, Plus, Edit, Trash2, X, Save, RefreshCcw, ArrowRight, AlertCircle, ChevronLeft, ChevronRight, UserCheck, Lock, Eye, EyeOff, Layout, FileText, Database, Settings, ShieldCheck, Key } from 'lucide-react';
 import { THEMES } from '../constants';
-import { RoleLevel, User, UserPermissions, LogPermissionLevel } from '../types';
+import { RoleLevel, User, UserPermissions, LogPermissionLevel, PermissionTemplate } from '../types';
 import { useApp } from '../App';
 import UsernameBadge from '../components/UsernameBadge';
 import FaceID from '../components/FaceID';
@@ -60,12 +60,129 @@ const Pagination = ({ current, total, pageSize, onChange }: { current: number, t
     );
 };
 
+// Reusable Permission Matrix Component
+const PermissionMatrix = ({ permissions, onChange, disabled = false }: { permissions: UserPermissions, onChange: (k: keyof UserPermissions, v: any) => void, disabled?: boolean }) => {
+    return (
+        <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-xl space-y-4">
+            <h4 className="font-bold text-gray-700 dark:text-gray-300 border-b dark:border-gray-700 pb-2">权限矩阵</h4>
+            
+            {/* 1. Log Permissions */}
+            <div>
+                <label className="block text-sm font-bold text-gray-500 mb-2">日志权限等级</label>
+                <div className="grid grid-cols-2 gap-2">
+                    {[
+                        { k: 'A', label: 'A级 (查看所有+任意撤销)' },
+                        { k: 'B', label: 'B级 (查看所有+撤销低级)' },
+                        { k: 'C', label: 'C级 (查看所有+撤销自己)' },
+                        { k: 'D', label: 'D级 (仅看自己+撤销自己)' },
+                    ].map(opt => (
+                        <label key={opt.k} className={`flex items-center gap-2 p-2 rounded border cursor-pointer ${permissions?.logPermission === opt.k ? 'bg-blue-50 border-blue-500' : 'hover:bg-white dark:hover:bg-gray-700 border-transparent'}`}>
+                            <input 
+                                type="radio" 
+                                name="logPerm" 
+                                checked={permissions?.logPermission === opt.k} 
+                                onChange={() => onChange('logPermission', opt.k)}
+                                disabled={disabled}
+                            />
+                            <span className="text-sm">{opt.label}</span>
+                        </label>
+                    ))}
+                </div>
+            </div>
+
+            {/* 2. Feature Hiding Toggles */}
+            <div>
+                <label className="block text-sm font-bold text-gray-500 mb-2">功能隐藏配置 (勾选以隐藏)</label>
+                <div className="grid grid-cols-2 gap-2">
+                    <label className="flex items-center gap-2 p-2 bg-white dark:bg-gray-800 rounded border dark:border-gray-600 cursor-pointer">
+                        <input type="checkbox" checked={!!permissions?.hideAuditHall} onChange={e => onChange('hideAuditHall', e.target.checked)} disabled={disabled} />
+                        <span className="text-sm">隐藏审计大厅</span>
+                    </label>
+                    <label className="flex items-center gap-2 p-2 bg-white dark:bg-gray-800 rounded border dark:border-gray-600 cursor-pointer">
+                        <input type="checkbox" checked={!!permissions?.hideStoreEdit} onChange={e => onChange('hideStoreEdit', e.target.checked)} disabled={disabled} />
+                        <span className="text-sm">隐藏门店“修改”按钮</span>
+                    </label>
+                    <label className="flex items-center gap-2 p-2 bg-white dark:bg-gray-800 rounded border dark:border-gray-600 cursor-pointer">
+                        <input type="checkbox" checked={!!permissions?.hideNewStore} onChange={e => onChange('hideNewStore', e.target.checked)} disabled={disabled} />
+                        <span className="text-sm">隐藏“新建门店”页面</span>
+                    </label>
+                    <label className="flex items-center gap-2 p-2 bg-white dark:bg-gray-800 rounded border dark:border-gray-600 cursor-pointer">
+                        <input type="checkbox" checked={!!permissions?.hideExcelExport} onChange={e => onChange('hideExcelExport', e.target.checked)} disabled={disabled} />
+                        <span className="text-sm">隐藏“Excel 导出”</span>
+                    </label>
+                    <label className="flex items-center gap-2 p-2 bg-white dark:bg-gray-800 rounded border dark:border-gray-600 cursor-pointer">
+                        <input type="checkbox" checked={!!permissions?.hideSettings} onChange={e => onChange('hideSettings', e.target.checked)} disabled={disabled} />
+                        <span className="text-sm">隐藏“权限设置”入口</span>
+                    </label>
+                </div>
+            </div>
+
+            {/* 3. Visibility */}
+            <div>
+                <label className="block text-sm font-bold text-gray-500 mb-2">列表可见性</label>
+                <div className="flex gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={!!permissions?.allowPeerLevel} onChange={e => onChange('allowPeerLevel', e.target.checked)} disabled={disabled} />
+                        <span className="text-sm">允许查看/管理同级用户</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={!!permissions?.hideSelf} onChange={e => onChange('hideSelf', e.target.checked)} disabled={disabled} />
+                        <span className="text-sm">在列表中隐藏自己</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// --- Template Edit Modal ---
+const TemplateEditModal = ({ template, onClose, onSave }: { template: PermissionTemplate, onClose: () => void, onSave: (t: PermissionTemplate) => void }) => {
+    // Removed role from form state
+    const [form, setForm] = useState<PermissionTemplate>({ ...template, permissions: { ...template.permissions } });
+
+    const handlePermissionChange = (key: keyof UserPermissions, value: any) => {
+        setForm(prev => ({
+            ...prev,
+            permissions: { ...prev.permissions, [key]: value }
+        }));
+    };
+
+    return (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white dark:bg-gray-800 w-full max-w-2xl h-[90vh] rounded-2xl shadow-2xl p-6 relative flex flex-col">
+                <div className="flex justify-between items-center mb-6 border-b dark:border-gray-700 pb-4">
+                    <h3 className="text-xl font-bold flex items-center gap-2">
+                        <ShieldCheck className="w-6 h-6 text-indigo-500" /> {template.id.startsWith('new_') ? '新建权限模板' : '编辑权限模板'}
+                    </h3>
+                    <button onClick={onClose}><X className="w-6 h-6 text-gray-500" /></button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto space-y-6 pr-2">
+                    <div className="grid grid-cols-1 gap-4">
+                        <div>
+                            <label className="block text-sm font-bold text-gray-500 mb-1">模板名称</label>
+                            <input value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="w-full p-2 rounded border dark:bg-gray-700 dark:border-gray-600 outline-none" placeholder="例如：普通员工模板" />
+                        </div>
+                    </div>
+
+                    <PermissionMatrix permissions={form.permissions} onChange={handlePermissionChange} />
+                </div>
+
+                <div className="mt-6 pt-4 border-t dark:border-gray-700 flex justify-end gap-3">
+                    <button onClick={onClose} className="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg font-bold text-gray-600 dark:text-gray-300">取消</button>
+                    <button onClick={() => onSave(form)} className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold shadow-lg">保存模板</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // --- Section 21: User Edit Modal (Permission Matrix) ---
 const UserEditModal = ({ user: editingUser, onClose, onSave, currentUser }: { user: User, onClose: () => void, onSave: (u: User) => void, currentUser: User }) => {
+    const { templates } = useApp();
     const [form, setForm] = useState<User>({ ...editingUser, permissions: { ...editingUser.permissions } });
     const isSelf = form.id === currentUser.id;
     
-    // Role selection logic: can only assign roles <= current user's role (numeric value >= current user's role)
     const allowedRoles = Object.values(RoleLevel).filter(r => r >= currentUser.role);
 
     const handlePermissionChange = (key: keyof UserPermissions, value: any) => {
@@ -73,6 +190,24 @@ const UserEditModal = ({ user: editingUser, onClose, onSave, currentUser }: { us
             ...prev,
             permissions: { ...prev.permissions, [key]: value }
         }));
+    };
+
+    // Filter templates to show only those created by the current user
+    const availableTemplates = templates.filter(t => t.created_by === currentUser.id);
+
+    const handleTemplateSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const tId = e.target.value;
+        if (!tId) return;
+        const template = templates.find(t => t.id === tId);
+        if (template) {
+            if (confirm(`确定应用模板 "${template.name}" 吗？\n这将覆盖当前用户的权限矩阵设置 (角色等级保持不变)。`)) {
+                setForm(prev => ({
+                    ...prev,
+                    // role: template.role, // Removed: Template no longer enforces role
+                    permissions: { ...template.permissions }
+                }));
+            }
+        }
     };
 
     const getRoleLabel = (r: RoleLevel) => {
@@ -124,75 +259,22 @@ const UserEditModal = ({ user: editingUser, onClose, onSave, currentUser }: { us
                         </div>
                     </div>
 
-                    {/* 21.3.1.2 Permission Matrix */}
-                    <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-xl space-y-4">
-                        <h4 className="font-bold text-gray-700 dark:text-gray-300 border-b dark:border-gray-700 pb-2">权限矩阵</h4>
-                        
-                        {/* 1. Log Permissions */}
-                        <div>
-                            <label className="block text-sm font-bold text-gray-500 mb-2">日志权限等级</label>
-                            <div className="grid grid-cols-2 gap-2">
-                                {[
-                                    { k: 'A', label: 'A级 (查看所有+任意撤销)' },
-                                    { k: 'B', label: 'B级 (查看所有+撤销低级)' },
-                                    { k: 'C', label: 'C级 (查看所有+撤销自己)' },
-                                    { k: 'D', label: 'D级 (仅看自己+撤销自己)' },
-                                ].map(opt => (
-                                    <label key={opt.k} className={`flex items-center gap-2 p-2 rounded border cursor-pointer ${form.permissions?.logPermission === opt.k ? 'bg-blue-50 border-blue-500' : 'hover:bg-white dark:hover:bg-gray-700 border-transparent'}`}>
-                                        <input 
-                                            type="radio" 
-                                            name="logPerm" 
-                                            checked={form.permissions?.logPermission === opt.k} 
-                                            onChange={() => handlePermissionChange('logPermission', opt.k)}
-                                        />
-                                        <span className="text-sm">{opt.label}</span>
-                                    </label>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* 2. Feature Hiding Toggles */}
-                        <div>
-                            <label className="block text-sm font-bold text-gray-500 mb-2">功能隐藏配置 (勾选以隐藏)</label>
-                            <div className="grid grid-cols-2 gap-2">
-                                <label className="flex items-center gap-2 p-2 bg-white dark:bg-gray-800 rounded border dark:border-gray-600 cursor-pointer">
-                                    <input type="checkbox" checked={form.permissions?.hideAuditHall} onChange={e => handlePermissionChange('hideAuditHall', e.target.checked)} />
-                                    <span className="text-sm">隐藏审计大厅</span>
-                                </label>
-                                <label className="flex items-center gap-2 p-2 bg-white dark:bg-gray-800 rounded border dark:border-gray-600 cursor-pointer">
-                                    <input type="checkbox" checked={form.permissions?.hideStoreEdit} onChange={e => handlePermissionChange('hideStoreEdit', e.target.checked)} />
-                                    <span className="text-sm">隐藏门店“修改”按钮</span>
-                                </label>
-                                <label className="flex items-center gap-2 p-2 bg-white dark:bg-gray-800 rounded border dark:border-gray-600 cursor-pointer">
-                                    <input type="checkbox" checked={form.permissions?.hideNewStore} onChange={e => handlePermissionChange('hideNewStore', e.target.checked)} />
-                                    <span className="text-sm">隐藏“新建门店”页面</span>
-                                </label>
-                                <label className="flex items-center gap-2 p-2 bg-white dark:bg-gray-800 rounded border dark:border-gray-600 cursor-pointer">
-                                    <input type="checkbox" checked={form.permissions?.hideExcelExport} onChange={e => handlePermissionChange('hideExcelExport', e.target.checked)} />
-                                    <span className="text-sm">隐藏“Excel 导出”</span>
-                                </label>
-                                <label className="flex items-center gap-2 p-2 bg-white dark:bg-gray-800 rounded border dark:border-gray-600 cursor-pointer">
-                                    <input type="checkbox" checked={form.permissions?.hideSettings} onChange={e => handlePermissionChange('hideSettings', e.target.checked)} />
-                                    <span className="text-sm">隐藏“权限设置”入口</span>
-                                </label>
-                            </div>
-                        </div>
-
-                        {/* 3. Visibility */}
-                        <div>
-                            <label className="block text-sm font-bold text-gray-500 mb-2">列表可见性</label>
-                            <div className="flex gap-4">
-                                <label className="flex items-center gap-2 cursor-pointer">
-                                    <input type="checkbox" checked={form.permissions?.allowPeerLevel} onChange={e => handlePermissionChange('allowPeerLevel', e.target.checked)} />
-                                    <span className="text-sm">允许查看/管理同级用户</span>
-                                </label>
-                                <label className="flex items-center gap-2 cursor-pointer">
-                                    <input type="checkbox" checked={form.permissions?.hideSelf} onChange={e => handlePermissionChange('hideSelf', e.target.checked)} />
-                                    <span className="text-sm">在列表中隐藏自己</span>
-                                </label>
-                            </div>
-                        </div>
+                    {/* Template Selector */}
+                    <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 rounded-xl">
+                        <label className="block text-sm font-bold text-indigo-600 dark:text-indigo-400 mb-2 flex items-center gap-2">
+                            <Key className="w-4 h-4"/> 快速配置：选择权限模板
+                        </label>
+                        <select onChange={handleTemplateSelect} className="w-full p-2 rounded border dark:bg-gray-700 dark:border-gray-600 outline-none text-sm">
+                            <option value="">-- 自定义配置 (不使用模板) --</option>
+                            {availableTemplates.map(t => (
+                                <option key={t.id} value={t.id}>{t.name}</option>
+                            ))}
+                        </select>
+                        <p className="text-xs text-indigo-400 mt-1">选择模板将自动填充下方的权限矩阵 (不影响角色等级)。</p>
                     </div>
+
+                    {/* 21.3.1.2 Permission Matrix */}
+                    <PermissionMatrix permissions={form.permissions!} onChange={handlePermissionChange} />
                 </div>
 
                 <div className="mt-6 pt-4 border-t dark:border-gray-700 flex justify-end gap-3">
@@ -206,7 +288,7 @@ const UserEditModal = ({ user: editingUser, onClose, onSave, currentUser }: { us
 
 // --- Main Settings Page ---
 const SettingsPage = () => {
-  const { theme, setTheme, user, login, logout, users, setUsers, reloadData } = useApp();
+  const { theme, setTheme, user, login, logout, users, setUsers, templates, setTemplates, reloadData } = useApp();
   const [openSection, setOpenSection] = useState<string | null>('account');
   const [showFaceReg, setShowFaceReg] = useState(false);
   
@@ -217,6 +299,8 @@ const SettingsPage = () => {
 
   // Section 21: Permission Settings State
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [permissionTab, setPermissionTab] = useState<'users' | 'templates'>('users');
+  const [editingTemplate, setEditingTemplate] = useState<PermissionTemplate | null>(null);
   const [userPage, setUserPage] = useState(1);
   const userPageSize = 10;
 
@@ -268,7 +352,7 @@ const SettingsPage = () => {
       window.location.reload(); // Refresh to ensure clean state transition
   };
 
-  // Handlers for Permission Settings
+  // Handlers for User Permissions
   const handleUserSave = async (u: User) => {
       try {
           // If creating new user
@@ -302,6 +386,34 @@ const SettingsPage = () => {
       } catch (e: any) { alert("删除失败: " + e.message); }
   };
 
+  // Handlers for Permission Templates
+  const handleTemplateSave = async (t: PermissionTemplate) => {
+      try {
+          const payload: any = {
+              name: t.name,
+              permissions: t.permissions,
+          };
+
+          if (t.id.startsWith('new_')) {
+              payload.id = `tpl_${Date.now()}`;
+              payload.created_by = user?.id; // Assign creator
+              await supabase.from('permission_templates').insert(payload);
+          } else {
+              await supabase.from('permission_templates').update(payload).eq('id', t.id);
+          }
+          await reloadData();
+          setEditingTemplate(null);
+      } catch (e: any) { alert("模板保存失败: " + e.message); }
+  };
+
+  const handleTemplateDelete = async (t: PermissionTemplate) => {
+      if (!window.confirm(`确定要删除模板 "${t.name}" 吗？`)) return;
+      try {
+          await supabase.from('permission_templates').delete().eq('id', t.id);
+          await reloadData();
+      } catch (e: any) { alert("模板删除失败: " + e.message); }
+  };
+
   // Filter Users Logic (21.2)
   const filteredUsers = users.filter(u => {
       if (!user) return false;
@@ -319,6 +431,9 @@ const SettingsPage = () => {
 
   const paginatedUsers = filteredUsers.slice((userPage - 1) * userPageSize, userPage * userPageSize);
 
+  // Filter Templates: Only show those created by the current user
+  const myTemplates = templates.filter(t => t.created_by === user?.id);
+
   const toggleSection = (id: string) => setOpenSection(openSection === id ? null : id);
 
   const SectionHeader = ({ id, title, icon: Icon, colorClass }: any) => (
@@ -332,6 +447,8 @@ const SettingsPage = () => {
     <div id="printable-content" className="space-y-6 animate-fade-in-up pb-20">
       {showFaceReg && <FaceID onSuccess={handleFaceRegister} onCancel={() => setShowFaceReg(false)} mode='register' />}
       {editingUser && user && <UserEditModal user={editingUser} currentUser={user} onClose={() => setEditingUser(null)} onSave={handleUserSave} />}
+      {/* Remove Role initialization from template creation */}
+      {editingTemplate && <TemplateEditModal template={editingTemplate} onClose={() => setEditingTemplate(null)} onSave={handleTemplateSave} />}
       
       {/* Switch Account Modal */}
       {isSwitchAccountOpen && (
@@ -411,39 +528,86 @@ const SettingsPage = () => {
             <SectionHeader id="permissions" title="权限设置" icon={Shield} colorClass="bg-purple-500" />
             {openSection === 'permissions' && (
             <div className="p-6 bg-white dark:bg-gray-800 rounded-b-xl border-x border-b border-gray-100 dark:border-gray-700 animate-slide-down">
-                <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-bold text-gray-700 dark:text-gray-300">用户管理列表</h3>
-                    <button 
-                        onClick={() => setEditingUser({ id: `new_${Date.now()}`, username: '', password: '', role: RoleLevel.STAFF, permissions: { logPermission: 'D' } } as User)}
-                        className="flex items-center gap-1 px-3 py-1.5 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 font-bold text-sm"
-                    >
-                        <Plus className="w-4 h-4"/> 新建用户
-                    </button>
+                
+                {/* Tabs */}
+                <div className="flex bg-gray-100 dark:bg-gray-700 p-1 rounded-lg w-fit mb-6">
+                    <button onClick={() => setPermissionTab('users')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${permissionTab === 'users' ? 'bg-white dark:bg-gray-600 shadow text-purple-600' : 'text-gray-500'}`}>用户管理列表</button>
+                    <button onClick={() => setPermissionTab('templates')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${permissionTab === 'templates' ? 'bg-white dark:bg-gray-600 shadow text-purple-600' : 'text-gray-500'}`}>模板管理</button>
                 </div>
-                <div className="space-y-3">
-                    {paginatedUsers.map(u => (
-                        <div key={u.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600 gap-3">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center text-xs font-bold font-mono shadow-inner">{u.role}</div>
-                                <div>
-                                    <div className="flex items-center gap-2"><UsernameBadge name={u.username} roleLevel={u.role} /></div>
-                                    <div className="text-xs text-gray-400 font-mono mt-0.5 max-w-[100px] truncate">{u.id}</div>
-                                </div>
-                            </div>
-                            
-                            {/* 21.3 Buttons */}
-                            <div className="flex gap-2 justify-end">
-                                <button onClick={() => setEditingUser(u)} className="px-3 py-1.5 bg-white dark:bg-gray-700 border dark:border-gray-600 rounded-lg text-sm font-bold text-blue-600 hover:bg-blue-50 flex items-center gap-1 shadow-sm">
-                                    <Settings className="w-4 h-4"/> 设置
-                                </button>
-                                <button onClick={() => handleUserDelete(u)} className="px-3 py-1.5 bg-white dark:bg-gray-700 border dark:border-gray-600 rounded-lg text-sm font-bold text-red-600 hover:bg-red-50 flex items-center gap-1 shadow-sm">
-                                    <Trash2 className="w-4 h-4"/> 删除
-                                </button>
-                            </div>
+
+                {permissionTab === 'users' ? (
+                    <>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold text-gray-700 dark:text-gray-300">用户列表</h3>
+                            <button 
+                                onClick={() => setEditingUser({ id: `new_${Date.now()}`, username: '', password: '', role: RoleLevel.STAFF, permissions: { logPermission: 'D' } } as User)}
+                                className="flex items-center gap-1 px-3 py-1.5 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 font-bold text-sm"
+                            >
+                                <Plus className="w-4 h-4"/> 新建用户
+                            </button>
                         </div>
-                    ))}
-                </div>
-                <Pagination current={userPage} total={filteredUsers.length} pageSize={userPageSize} onChange={setUserPage} />
+                        <div className="space-y-3">
+                            {paginatedUsers.map(u => (
+                                <div key={u.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600 gap-3">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center text-xs font-bold font-mono shadow-inner">{u.role}</div>
+                                        <div>
+                                            <div className="flex items-center gap-2"><UsernameBadge name={u.username} roleLevel={u.role} /></div>
+                                            <div className="text-xs text-gray-400 font-mono mt-0.5 max-w-[100px] truncate">{u.id}</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="flex gap-2 justify-end">
+                                        <button onClick={() => setEditingUser(u)} className="px-3 py-1.5 bg-white dark:bg-gray-700 border dark:border-gray-600 rounded-lg text-sm font-bold text-blue-600 hover:bg-blue-50 flex items-center gap-1 shadow-sm">
+                                            <Settings className="w-4 h-4"/> 设置
+                                        </button>
+                                        <button onClick={() => handleUserDelete(u)} className="px-3 py-1.5 bg-white dark:bg-gray-700 border dark:border-gray-600 rounded-lg text-sm font-bold text-red-600 hover:bg-red-50 flex items-center gap-1 shadow-sm">
+                                            <Trash2 className="w-4 h-4"/> 删除
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <Pagination current={userPage} total={filteredUsers.length} pageSize={userPageSize} onChange={setUserPage} />
+                    </>
+                ) : (
+                    <>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold text-gray-700 dark:text-gray-300">权限模板列表</h3>
+                            <button 
+                                onClick={() => setEditingTemplate({ id: `new_${Date.now()}`, name: '', permissions: { logPermission: 'D' } } as PermissionTemplate)}
+                                className="flex items-center gap-1 px-3 py-1.5 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 font-bold text-sm"
+                            >
+                                <Plus className="w-4 h-4"/> 新增权限模板
+                            </button>
+                        </div>
+                        <div className="space-y-3">
+                            {myTemplates.map(t => (
+                                <div key={t.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600 gap-3">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 rounded-lg bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
+                                            <Layout className="w-5 h-5"/>
+                                        </div>
+                                        <div>
+                                            <div className="font-bold text-gray-800 dark:text-gray-200">{t.name}</div>
+                                            {/* Role Base removed per request */}
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="flex gap-2 justify-end">
+                                        <button onClick={() => setEditingTemplate(t)} className="px-3 py-1.5 bg-white dark:bg-gray-700 border dark:border-gray-600 rounded-lg text-sm font-bold text-blue-600 hover:bg-blue-50 flex items-center gap-1 shadow-sm">
+                                            <Edit className="w-4 h-4"/> 编辑
+                                        </button>
+                                        <button onClick={() => handleTemplateDelete(t)} className="px-3 py-1.5 bg-white dark:bg-gray-700 border dark:border-gray-600 rounded-lg text-sm font-bold text-red-600 hover:bg-red-50 flex items-center gap-1 shadow-sm">
+                                            <Trash2 className="w-4 h-4"/> 删除
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                            {myTemplates.length === 0 && <div className="text-center text-gray-400 py-10">暂无模板，请点击新建</div>}
+                        </div>
+                    </>
+                )}
             </div>
             )}
         </div>
